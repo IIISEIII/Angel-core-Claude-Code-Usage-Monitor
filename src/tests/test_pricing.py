@@ -95,6 +95,39 @@ class TestPricingCalculator:
             )  # Cache creation costs more
             assert pricing["cache_read"] < pricing["input"]  # Cache read costs less
 
+    @pytest.mark.parametrize(
+        "model,inp,out",
+        [
+            # Current models — family fallback now reflects current rates
+            ("claude-opus-4-8", 5.0, 25.0),
+            ("claude-opus-4-6", 5.0, 25.0),
+            ("claude-opus-4-5-20251101", 5.0, 25.0),
+            ("claude-haiku-4-5", 1.0, 5.0),
+            ("claude-haiku-4-5-20251001", 1.0, 5.0),
+            ("claude-fable-5", 10.0, 50.0),
+            ("claude-sonnet-4-20250514", 3.0, 15.0),
+            # Legacy versions priced differently from the current family rate
+            ("claude-opus-4-20250514", 15.0, 75.0),  # Opus 4.0
+            ("claude-3-opus", 15.0, 75.0),
+            ("claude-3-haiku", 0.25, 1.25),
+            ("claude-3-5-haiku", 0.8, 4.0),
+        ],
+    )
+    def test_version_specific_pricing(
+        self, calculator: PricingCalculator, model: str, inp: float, out: float
+    ) -> None:
+        """Per-version rates: current models get current rates, legacy keep theirs (#182)."""
+        pricing = calculator._get_pricing_for_model(model)
+        assert pricing["input"] == inp
+        assert pricing["output"] == out
+
+    def test_calculate_cost_opus_4_8(self, calculator: PricingCalculator) -> None:
+        """End-to-end cost for current Opus uses $5/$25, not the legacy $15/$75."""
+        cost = calculator.calculate_cost(
+            model="claude-opus-4-8", input_tokens=1_000_000, output_tokens=1_000_000
+        )
+        assert cost == 30.0  # 5.0 + 25.0
+
     def test_calculate_cost_claude_3_haiku_basic(
         self, calculator: PricingCalculator
     ) -> None:

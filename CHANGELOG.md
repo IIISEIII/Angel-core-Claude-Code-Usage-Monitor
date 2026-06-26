@@ -9,6 +9,7 @@
 - **Clear message on unsupported Python**: running on Python older than 3.9 now prints a clear "Python 3.9+ is required" message (with a `uv` install hint) instead of failing cryptically; the version check is now actually wired into startup and uses the documented 3.9 minimum. (#172)
 - **Helpful "no data" diagnostic**: when no Claude data directory is found, the monitor now lists the exact paths it searched and how to fix it, instead of a single terse line / blank screen. (#110)
 - **CLAUDE_CONFIG_DIR is honored**: when set, usage data under `$CLAUDE_CONFIG_DIR/projects` is discovered (comma-separated directories supported) and checked before the standard locations; path discovery also deduplicates repeated directories. (#116)
+- **Up-to-date, version-specific model pricing**: token costs now use current Anthropic rates — Opus 4.5+ at $5/$25 (previously billed at the legacy $15/$75, a 3x overcharge), Haiku 4.5 at $1/$5, and Fable 5 at $10/$50 — while older models (Opus 3/4.0/4.1, Haiku 3/3.5) keep their original rates. (#182)
 
 ### Features
 - **`--hide-model-distribution`**: new flag to hide the model distribution bar in the live view. (#161)

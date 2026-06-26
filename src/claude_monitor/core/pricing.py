@@ -26,12 +26,14 @@ class PricingCalculator:
     - Backward compatible with both APIs
     """
 
+    # Current per-family rates (Opus 4.5+, Sonnet 3.5+, Haiku 4.5, Fable 5).
+    # Cache create = input * 1.25 (5-min TTL); cache read = input * 0.1.
     FALLBACK_PRICING: Dict[str, Dict[str, float]] = {
         "opus": {
-            "input": 15.0,
-            "output": 75.0,
-            "cache_creation": 18.75,
-            "cache_read": 1.5,
+            "input": 5.0,
+            "output": 25.0,
+            "cache_creation": 6.25,
+            "cache_read": 0.5,
         },
         "sonnet": {
             "input": 3.0,
@@ -40,10 +42,52 @@ class PricingCalculator:
             "cache_read": 0.3,
         },
         "haiku": {
+            "input": 1.0,
+            "output": 5.0,
+            "cache_creation": 1.25,
+            "cache_read": 0.1,
+        },
+        "fable": {
+            "input": 10.0,
+            "output": 50.0,
+            "cache_creation": 12.5,
+            "cache_read": 1.0,
+        },
+    }
+
+    # Versions priced differently from the current family rate.
+    LEGACY_PRICING: Dict[str, Dict[str, float]] = {
+        # Opus 3 / 4.0 / 4.1 were $15/$75 before Opus 4.5 dropped to $5/$25
+        "claude-3-opus": {
+            "input": 15.0,
+            "output": 75.0,
+            "cache_creation": 18.75,
+            "cache_read": 1.5,
+        },
+        "claude-opus-4-20250514": {
+            "input": 15.0,
+            "output": 75.0,
+            "cache_creation": 18.75,
+            "cache_read": 1.5,
+        },
+        "claude-opus-4-1-20250805": {
+            "input": 15.0,
+            "output": 75.0,
+            "cache_creation": 18.75,
+            "cache_read": 1.5,
+        },
+        # Haiku 3 / 3.5 were cheaper than Haiku 4.5
+        "claude-3-haiku": {
             "input": 0.25,
             "output": 1.25,
             "cache_creation": 0.3,
             "cache_read": 0.03,
+        },
+        "claude-3-5-haiku": {
+            "input": 0.8,
+            "output": 4.0,
+            "cache_creation": 1.0,
+            "cache_read": 0.08,
         },
     }
 
@@ -58,13 +102,16 @@ class PricingCalculator:
         """
         # Use fallback pricing if no custom pricing provided
         self.pricing: Dict[str, Dict[str, float]] = custom_pricing or {
-            "claude-3-opus": self.FALLBACK_PRICING["opus"],
+            **self.LEGACY_PRICING,
             "claude-3-sonnet": self.FALLBACK_PRICING["sonnet"],
-            "claude-3-haiku": self.FALLBACK_PRICING["haiku"],
             "claude-3-5-sonnet": self.FALLBACK_PRICING["sonnet"],
-            "claude-3-5-haiku": self.FALLBACK_PRICING["haiku"],
             "claude-sonnet-4-20250514": self.FALLBACK_PRICING["sonnet"],
-            "claude-opus-4-20250514": self.FALLBACK_PRICING["opus"],
+            "claude-opus-4-5": self.FALLBACK_PRICING["opus"],
+            "claude-opus-4-6": self.FALLBACK_PRICING["opus"],
+            "claude-opus-4-7": self.FALLBACK_PRICING["opus"],
+            "claude-opus-4-8": self.FALLBACK_PRICING["opus"],
+            "claude-haiku-4-5": self.FALLBACK_PRICING["haiku"],
+            "claude-fable-5": self.FALLBACK_PRICING["fable"],
         }
         self._cost_cache: Dict[str, float] = {}
 
@@ -173,8 +220,12 @@ class PricingCalculator:
         if strict:
             raise KeyError(f"Unknown model: {model}")
 
-        # Fallback to hardcoded pricing based on model type
+        # Fallback to the current family rate by name.
+        # ponytail: *-fast premium variants and unknown models get the base
+        # family rate (underestimates fast mode); add verified keys above if needed.
         model_lower = model.lower()
+        if "fable" in model_lower:
+            return self.FALLBACK_PRICING["fable"]
         if "opus" in model_lower:
             return self.FALLBACK_PRICING["opus"]
         if "haiku" in model_lower:
