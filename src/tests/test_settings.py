@@ -685,6 +685,20 @@ class TestSettings:
         ).to_namespace()
         assert namespace.hide_model_distribution is True
 
+    def test_header_and_emoji_flags_map_to_namespace(self) -> None:
+        """header/emoji default on; --no-header/--no-emoji flip them off (#57)."""
+        default = Settings(_cli_parse_args=[])
+        assert default.header is True
+        assert default.emoji is True
+        assert default.to_namespace().no_header is False
+        assert default.to_namespace().no_emoji is False
+
+        namespace = Settings(
+            header=False, emoji=False, _cli_parse_args=[]
+        ).to_namespace()
+        assert namespace.no_header is True
+        assert namespace.no_emoji is True
+
 
 class TestSettingsIntegration:
     """Integration tests for Settings class."""

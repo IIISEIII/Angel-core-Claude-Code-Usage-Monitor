@@ -3,6 +3,7 @@
 Handles formatting of active session screens and session data display.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
@@ -20,6 +21,17 @@ from claude_monitor.utils.time_utils import (
     format_display_time,
     get_time_format_preference,
     percentage,
+)
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f300-\U0001faff"  # emoji & pictographs
+    "\U00002600-\U000027bf"  # misc symbols, dingbats
+    "\U0001f1e6-\U0001f1ff"  # regional indicators
+    "\u2b00-\u2bff"  # misc symbols and arrows
+    "\u2300-\u23ff"  # misc technical (clocks, etc.)
+    "\ufe0f"  # variation selector-16
+    "]"
 )
 
 
@@ -182,8 +194,9 @@ class SessionDisplayComponent:
 
         screen_buffer = []
 
-        header_manager = HeaderManager()
-        screen_buffer.extend(header_manager.create_header(plan, timezone))
+        if not kwargs.get("no_header", False):
+            header_manager = HeaderManager()
+            screen_buffer.extend(header_manager.create_header(plan, timezone))
 
         if plan in ["custom", "pro", "max5", "max20"]:
             from claude_monitor.core.plans import DEFAULT_COST_LIMIT
@@ -327,6 +340,9 @@ class SessionDisplayComponent:
         screen_buffer.append(
             f"⏰ [dim]{current_time_str}[/] 📝 [success]Active session[/] | [dim]Ctrl+C to exit[/] 🟢"
         )
+
+        if kwargs.get("no_emoji", False):
+            screen_buffer = [_EMOJI_RE.sub("", line) for line in screen_buffer]
 
         return screen_buffer
 

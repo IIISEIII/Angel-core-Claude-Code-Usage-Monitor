@@ -12,6 +12,7 @@
 
 ### Features
 - **`--hide-model-distribution`**: new flag to hide the model distribution bar in the live view. (#161)
+- **`--no-header` / `--no-emoji`**: hide the header banner, or render the live view without emoji (plain output). (#57)
 
 ## [3.1.0] - 2025-07-23
 

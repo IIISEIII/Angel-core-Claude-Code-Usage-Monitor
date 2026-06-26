@@ -175,6 +175,14 @@ class Settings(BaseSettings):
         default=False, description="Hide the model distribution bar"
     )
 
+    header: bool = Field(
+        default=True, description="Show the header banner (--no-header to hide)"
+    )
+
+    emoji: bool = Field(
+        default=True, description="Show emoji (--no-emoji for plain output)"
+    )
+
     @field_validator("plan", mode="before")
     @classmethod
     def validate_plan(cls, v: Any) -> str:
@@ -352,5 +360,7 @@ class Settings(BaseSettings):
         args.log_file = str(self.log_file) if self.log_file else None
         args.version = self.version
         args.hide_model_distribution = self.hide_model_distribution
+        args.no_header = not self.header
+        args.no_emoji = not self.emoji
 
         return args

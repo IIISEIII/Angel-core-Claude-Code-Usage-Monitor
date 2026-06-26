@@ -271,6 +271,8 @@ class DisplayController:
         processed_data["hide_model_distribution"] = getattr(
             args, "hide_model_distribution", False
         )
+        processed_data["no_header"] = getattr(args, "no_header", False)
+        processed_data["no_emoji"] = getattr(args, "no_emoji", False)
 
         try:
             screen_buffer = self.session_display.format_active_session_screen(

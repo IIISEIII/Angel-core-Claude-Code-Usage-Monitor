@@ -39,3 +39,19 @@ def test_hide_model_distribution_omits_the_bar() -> None:
     )
     assert not any("Model Distribution" in line for line in lines)
     assert not any("Model Usage" in line for line in lines)
+
+
+def test_no_header_produces_fewer_lines() -> None:
+    comp = SessionDisplayComponent()
+    full = comp.format_active_session_screen(**_screen_kwargs())
+    without = comp.format_active_session_screen(**_screen_kwargs(), no_header=True)
+    assert len(without) < len(full)
+
+
+def test_no_emoji_strips_emoji_from_output() -> None:
+    lines = SessionDisplayComponent().format_active_session_screen(
+        **_screen_kwargs(), no_emoji=True
+    )
+    joined = "".join(lines)
+    for ch in ("💰", "📊", "🤖", "🔥", "💲", "🎯", "📨", "⏰", "🟢"):
+        assert ch not in joined
