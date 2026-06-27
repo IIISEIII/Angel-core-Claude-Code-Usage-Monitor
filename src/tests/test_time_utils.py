@@ -2,6 +2,7 @@
 
 import locale
 import platform
+import sys
 from datetime import datetime
 from typing import List
 from unittest.mock import Mock, patch
@@ -103,8 +104,8 @@ class TestTimeFormatDetector:
         self, mock_langinfo: Mock, mock_setlocale: Mock
     ) -> None:
         """Test locale detection for 12h format with AM/PM."""
-        mock_langinfo.side_effect = (
-            lambda x: "%I:%M:%S %p" if x == locale.T_FMT_AMPM else ""
+        mock_langinfo.side_effect = lambda x: (
+            "%I:%M:%S %p" if x == locale.T_FMT_AMPM else ""
         )
 
         result = TimeFormatDetector.detect_from_locale()
@@ -116,8 +117,8 @@ class TestTimeFormatDetector:
         self, mock_langinfo: Mock, mock_setlocale: Mock
     ) -> None:
         """Test locale detection for 12h format with %p in D_T_FMT."""
-        mock_langinfo.side_effect = (
-            lambda x: "%m/%d/%Y %I:%M:%S %p" if x == locale.D_T_FMT else ""
+        mock_langinfo.side_effect = lambda x: (
+            "%m/%d/%Y %I:%M:%S %p" if x == locale.D_T_FMT else ""
         )
 
         result = TimeFormatDetector.detect_from_locale()
@@ -359,19 +360,47 @@ class TestSystemTimeDetector:
         result = SystemTimeDetector.get_timezone()
         assert result == "Europe/London"
 
+    @patch("os.environ.get")
     @patch("platform.system")
     @patch("subprocess.run")
-    def test_get_timezone_windows(self, mock_run: Mock, mock_system: Mock) -> None:
-        """Test Windows timezone detection."""
+    def test_get_timezone_windows(
+        self, mock_run: Mock, mock_system: Mock, mock_env: Mock
+    ) -> None:
+        """Windows timezone detection returns an IANA name, not a tzutil label."""
+        mock_env.return_value = None
         mock_system.return_value = "Windows"
 
         mock_result = Mock()
         mock_result.stdout = "Eastern Standard Time"
         mock_run.return_value = mock_result
 
-        # Should return the Windows timezone name
-        result = SystemTimeDetector.get_timezone()
-        assert result == "Eastern Standard Time"
+        mock_tzlocal = Mock()
+        mock_tzlocal.get_localzone_name.return_value = "America/New_York"
+        with patch.dict(sys.modules, {"tzlocal": mock_tzlocal}):
+            result = SystemTimeDetector.get_timezone()
+
+        assert result == "America/New_York"
+        mock_run.assert_not_called()
+
+    @patch("os.environ.get")
+    @patch("platform.system")
+    @patch("subprocess.run")
+    def test_get_timezone_windows_without_tzlocal_falls_back_to_utc(
+        self, mock_run: Mock, mock_system: Mock, mock_env: Mock
+    ) -> None:
+        """A Windows tzutil label must not be returned as a fake IANA timezone."""
+        mock_env.return_value = None
+        mock_system.return_value = "Windows"
+
+        mock_result = Mock()
+        mock_result.stdout = "Eastern Standard Time"
+        mock_run.return_value = mock_result
+
+        with patch.dict(sys.modules, {"tzlocal": None}):
+            result = SystemTimeDetector.get_timezone()
+
+        assert result == "UTC"
+        mock_run.assert_not_called()
 
     @patch("platform.system")
     def test_get_timezone_unknown_system(self, mock_system: Mock) -> None:

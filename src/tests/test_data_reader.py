@@ -32,6 +32,11 @@ from claude_monitor.utils.time_utils import TimezoneHandler
 class TestLoadUsageEntries:
     """Test the main load_usage_entries function."""
 
+    @staticmethod
+    def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
     @patch("claude_monitor.data.reader._find_jsonl_files")
     @patch("claude_monitor.data.reader._process_single_file")
     def test_load_usage_entries_basic(
@@ -126,6 +131,40 @@ class TestLoadUsageEntries:
         assert len(entries) == 2
         assert entries[0] == entry2
         assert entries[1] == entry1
+
+    def test_load_usage_entries_accepts_multiple_paths_dedups_and_tags_source(
+        self, tmp_path: Path
+    ) -> None:
+        """Multiple roots share one processed_hashes set and tag each entry source."""
+        first = tmp_path / "home" / "projects"
+        second = tmp_path / "work" / "projects"
+        duplicate = {
+            "timestamp": "2024-01-01T12:00:00Z",
+            "message_id": "msg-1",
+            "requestId": "req-1",
+            "model": "claude-3-haiku",
+            "input_tokens": 100,
+            "output_tokens": 50,
+        }
+        unique = {
+            "timestamp": "2024-01-01T12:05:00Z",
+            "message_id": "msg-2",
+            "requestId": "req-2",
+            "model": "claude-3-haiku",
+            "input_tokens": 200,
+            "output_tokens": 75,
+        }
+        self._write_jsonl(first / "a.jsonl", [duplicate])
+        self._write_jsonl(second / "b.jsonl", [duplicate, unique])
+
+        entries, _ = load_usage_entries(data_path=[str(first), str(second)])
+
+        assert [entry.message_id for entry in entries] == ["msg-1", "msg-2"]
+        assert entries[0].source == {"kind": "claude_code_jsonl", "account": str(first)}
+        assert entries[1].source == {
+            "kind": "claude_code_jsonl",
+            "account": str(second),
+        }
 
     @patch("claude_monitor.data.reader._find_jsonl_files")
     @patch("claude_monitor.data.reader._process_single_file")
@@ -661,6 +700,7 @@ class TestMapToUsageEntry:
             "model": "claude-3-haiku",
             "request_id": "req_456",
             "cost": 0.001,
+            "cwd": "/workspace/app",
         }
 
         with patch(
@@ -706,6 +746,7 @@ class TestMapToUsageEntry:
         assert result.model == "claude-3-haiku"
         assert result.message_id == "msg_123"
         assert result.request_id == "req_456"
+        assert result.project == "/workspace/app"
 
     def test_map_to_usage_entry_no_timestamp(
         self, mock_components: Tuple[Mock, Mock]
@@ -1570,17 +1611,13 @@ class TestDataProcessors:
 
         processor = TimestampProcessor()
 
-        with patch.object(processor.timezone_handler, "ensure_timezone") as mock_ensure:
-            mock_dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-            mock_ensure.return_value = mock_dt
-
-            # Test integer timestamp
-            result = processor.parse_timestamp(1704110400)  # 2024-01-01 12:00:00 UTC
-            assert result == mock_dt
-
-            # Test float timestamp
-            result = processor.parse_timestamp(1704110400.5)
-            assert result == mock_dt
+        # Numeric epochs are absolute instants -> parsed directly as UTC.
+        assert processor.parse_timestamp(1704110400) == datetime(
+            2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc
+        )
+        assert processor.parse_timestamp(1704110400.5) == datetime(
+            2024, 1, 1, 12, 0, 0, 500000, tzinfo=timezone.utc
+        )
 
     def test_timestamp_processor_parse_invalid(self):
         """Test parsing invalid timestamps."""

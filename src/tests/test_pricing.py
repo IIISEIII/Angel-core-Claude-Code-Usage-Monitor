@@ -95,6 +95,41 @@ class TestPricingCalculator:
             )  # Cache creation costs more
             assert pricing["cache_read"] < pricing["input"]  # Cache read costs less
 
+    @pytest.mark.parametrize(
+        "model,inp,out",
+        [
+            # Current models — family fallback now reflects current rates
+            ("claude-opus-4-8", 5.0, 25.0),
+            ("claude-opus-4-6", 5.0, 25.0),
+            ("claude-opus-4-5-20251101", 5.0, 25.0),
+            ("claude-haiku-4-5", 1.0, 5.0),
+            ("claude-haiku-4-5-20251001", 1.0, 5.0),
+            ("claude-fable-5", 10.0, 50.0),
+            ("claude-sonnet-4-20250514", 3.0, 15.0),
+            # Legacy versions priced differently from the current family rate
+            ("claude-opus-4-20250514", 15.0, 75.0),  # Opus 4.0
+            ("claude-opus-4-1", 15.0, 75.0),  # Opus 4.1 alias (codex P1)
+            ("claude-opus-4-0", 15.0, 75.0),  # Opus 4.0 alias
+            ("claude-3-opus", 15.0, 75.0),
+            ("claude-3-haiku", 0.25, 1.25),
+            ("claude-3-5-haiku", 0.8, 4.0),
+        ],
+    )
+    def test_version_specific_pricing(
+        self, calculator: PricingCalculator, model: str, inp: float, out: float
+    ) -> None:
+        """Per-version rates: current models get current rates, legacy keep theirs (#182)."""
+        pricing = calculator._get_pricing_for_model(model)
+        assert pricing["input"] == inp
+        assert pricing["output"] == out
+
+    def test_calculate_cost_opus_4_8(self, calculator: PricingCalculator) -> None:
+        """End-to-end cost for current Opus uses $5/$25, not the legacy $15/$75."""
+        cost = calculator.calculate_cost(
+            model="claude-opus-4-8", input_tokens=1_000_000, output_tokens=1_000_000
+        )
+        assert cost == 30.0  # 5.0 + 25.0
+
     def test_calculate_cost_claude_3_haiku_basic(
         self, calculator: PricingCalculator
     ) -> None:
@@ -199,6 +234,34 @@ class TestPricingCalculator:
             calculator.calculate_cost(
                 model="unknown-model", input_tokens=1000, output_tokens=500, strict=True
             )
+
+    def test_non_anthropic_model_not_priced_as_claude(
+        self, calculator: PricingCalculator
+    ) -> None:
+        """A non-Claude model (e.g. routed via Claude Code Router) must not be billed
+        at a fabricated Claude rate (#217, #199)."""
+        # 1M input tokens at the Sonnet rate would be $3.00; it must be $0 (unpriced).
+        assert (
+            calculator.calculate_cost(
+                model="gpt-4o", input_tokens=1_000_000, output_tokens=0
+            )
+            == 0.0
+        )
+        assert (
+            calculator.calculate_cost(
+                model="deepseek-chat", input_tokens=1_000_000, output_tokens=0
+            )
+            == 0.0
+        )
+
+    def test_unrecognized_claude_model_still_uses_family_fallback(
+        self, calculator: PricingCalculator
+    ) -> None:
+        """An unknown but clearly-Claude model still gets a Claude family rate."""
+        cost = calculator.calculate_cost(
+            model="claude-experimental-xyz", input_tokens=1_000_000, output_tokens=0
+        )
+        assert cost > 0.0
 
     def test_calculate_cost_zero_tokens(self, calculator: PricingCalculator) -> None:
         """Test cost calculation with zero tokens."""

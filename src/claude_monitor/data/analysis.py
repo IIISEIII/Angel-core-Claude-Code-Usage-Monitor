@@ -5,12 +5,14 @@ Contains the main analyze_usage function and related analysis components.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from claude_monitor.core.calculations import BurnRateCalculator
 from claude_monitor.core.models import CostMode, SessionBlock, UsageEntry
 from claude_monitor.data.analyzer import SessionAnalyzer
 from claude_monitor.data.reader import load_usage_entries
+from claude_monitor.data.warehouse import UsageWarehouse, default_warehouse_path
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,11 @@ def analyze_usage(
     hours_back: Optional[int] = 96,
     use_cache: bool = True,
     quick_start: bool = False,
-    data_path: Optional[str] = None,
+    data_path: Optional[Union[str, Path, Sequence[Union[str, Path]]]] = None,
+    filter_models: str = "all",
+    write_warehouse: bool = False,
+    warehouse_file: Optional[Union[str, Path]] = None,
+    warehouse_retention_days: int = 365,
 ) -> Dict[str, Any]:
     """
     Main entry point to generate response_final.json.
@@ -56,6 +62,7 @@ def analyze_usage(
         hours_back=hours_back,
         mode=CostMode.AUTO,
         include_raw=True,
+        filter_models=filter_models,
     )
     load_time = (datetime.now() - start_time).total_seconds()
     logger.info(f"Data loaded in {load_time:.3f}s")
@@ -75,13 +82,31 @@ def analyze_usage(
         limits_detected = len(limit_detections)
 
         for block in blocks:
-            block_limits = [
-                _format_limit_info(limit_info)
+            in_block = [
+                limit_info
                 for limit_info in limit_detections
                 if _is_limit_in_block_timerange(limit_info, block)
             ]
-            if block_limits:
-                block.limit_messages = block_limits
+            if in_block:
+                block.limit_messages = [_format_limit_info(li) for li in in_block]
+                # Prefer an explicit reset time from the limit message over the
+                # start+5h estimate; take the reset from the most recent limit
+                # message (latest timestamp), not the largest reset value.
+                with_reset = [li for li in in_block if li.get("reset_time")]
+                if with_reset:
+                    newest = max(with_reset, key=lambda li: li["timestamp"])
+                    block.usage_limit_reset_time = newest["reset_time"]
+
+    if write_warehouse:
+        warehouse_path = (
+            Path(warehouse_file) if warehouse_file else default_warehouse_path()
+        )
+        warehouse = UsageWarehouse(
+            warehouse_path, retention_days=warehouse_retention_days
+        )
+        warehouse.upsert_entries(entries)
+        if raw_entries and limit_detections:
+            warehouse.upsert_limit_events(limit_detections)
 
     metadata: Dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -145,12 +170,19 @@ def _is_limit_in_block_timerange(
     if limit_timestamp.tzinfo is None:
         limit_timestamp = limit_timestamp.replace(tzinfo=timezone.utc)
 
-    return block.start_time <= limit_timestamp <= block.end_time
+    if not (block.start_time <= limit_timestamp <= block.end_time):
+        return False
+
+    limit_source = limit_info.get("source")
+    if limit_source and block.source and limit_source != block.source:
+        return False
+
+    return True
 
 
 def _format_limit_info(limit_info: Dict[str, Any]) -> Dict[str, Any]:
     """Format limit info for block assignment."""
-    return {
+    formatted = {
         "type": limit_info["type"],
         "timestamp": limit_info["timestamp"].isoformat(),
         "content": limit_info["content"],
@@ -160,6 +192,9 @@ def _format_limit_info(limit_info: Dict[str, Any]) -> Dict[str, Any]:
             else None
         ),
     }
+    if "source" in limit_info:
+        formatted["source"] = limit_info["source"]
+    return formatted
 
 
 def _convert_blocks_to_dict_format(blocks: List[SessionBlock]) -> List[Dict[str, Any]]:
@@ -198,6 +233,12 @@ def _create_base_block_dict(block: SessionBlock) -> Dict[str, Any]:
         "perModelStats": block.per_model_stats,
         "sentMessagesCount": block.sent_messages_count,
         "durationMinutes": block.duration_minutes,
+        "usageLimitResetTime": (
+            block.usage_limit_reset_time.isoformat()
+            if block.usage_limit_reset_time
+            else None
+        ),
+        "source": block.source,
         "entries": _format_block_entries(block.entries),
         "entries_count": len(block.entries),
     }
@@ -216,6 +257,8 @@ def _format_block_entries(entries: List[UsageEntry]) -> List[Dict[str, Any]]:
             "model": entry.model,
             "messageId": entry.message_id,
             "requestId": entry.request_id,
+            "project": entry.project,
+            "source": entry.source,
         }
         for entry in entries
     ]

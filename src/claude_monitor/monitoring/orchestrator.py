@@ -3,7 +3,8 @@
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from claude_monitor.core.plans import DEFAULT_TOKEN_LIMIT, get_token_limit
 from claude_monitor.error_handling import report_error
@@ -17,7 +18,9 @@ class MonitoringOrchestrator:
     """Orchestrates monitoring components following SRP."""
 
     def __init__(
-        self, update_interval: int = 10, data_path: Optional[str] = None
+        self,
+        update_interval: int = 10,
+        data_path: Optional[Union[str, Path, List[str]]] = None,
     ) -> None:
         """Initialize orchestrator with components.
 
@@ -76,6 +79,14 @@ class MonitoringOrchestrator:
             args: Command line arguments
         """
         self._args = args
+        # Propagate the model filter so non-Anthropic entries are excluded from
+        # the live data the same way as one-shot (#113).
+        self.data_manager.filter_models = getattr(args, "filter_models", "all")
+        self.data_manager.write_warehouse = getattr(args, "warehouse", False)
+        self.data_manager.warehouse_file = getattr(args, "warehouse_file", None)
+        self.data_manager.warehouse_retention_days = getattr(
+            args, "warehouse_retention_days", 365
+        )
 
     def register_update_callback(
         self, callback: Callable[[Dict[str, Any]], None]

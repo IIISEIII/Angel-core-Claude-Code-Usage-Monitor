@@ -332,10 +332,17 @@ class SystemTimeDetector:
 
         elif system == "Windows":
             with contextlib.suppress(Exception):
-                tzutil_result: subprocess.CompletedProcess[str] = subprocess.run(
-                    ["tzutil", "/g"], capture_output=True, text=True, check=True
-                )
-                return tzutil_result.stdout.strip()
+                from tzlocal import get_localzone_name
+
+                tz_name = get_localzone_name()
+                if tz_name:
+                    try:
+                        pytz.timezone(tz_name)
+                        return tz_name
+                    except pytz.exceptions.UnknownTimeZoneError:
+                        logger.warning(
+                            f"Detected invalid Windows timezone '{tz_name}', using UTC"
+                        )
 
         return "UTC"
 

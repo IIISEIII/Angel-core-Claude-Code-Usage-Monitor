@@ -5,7 +5,7 @@ This module provides formatting functions for currency, time, and display output
 
 import logging
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any, Optional, Sequence, Union
 
 from claude_monitor.utils.time_utils import format_display_time as _format_display_time
 from claude_monitor.utils.time_utils import get_time_format_preference
@@ -26,6 +26,39 @@ def format_number(value: Union[int, float], decimals: int = 0) -> str:
     if decimals > 0:
         return f"{value:,.{decimals}f}"
     return f"{int(value):,}"
+
+
+def format_number_abbreviated(value: Union[int, float]) -> str:
+    """Format a number with compact token suffixes."""
+    sign = "-" if value < 0 else ""
+    absolute = abs(float(value))
+    for threshold, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "k")):
+        if absolute >= threshold:
+            scaled = absolute / threshold
+            text = f"{scaled:.1f}".rstrip("0").rstrip(".")
+            return f"{sign}{text}{suffix}"
+    return f"{int(value):,}"
+
+
+def render_sparkline(values: Sequence[Union[int, float]]) -> str:
+    """Render a compact sparkline for opt-in table views."""
+    if not values:
+        return ""
+    blocks = "▁▂▃▄▅▆▇█"
+    if len(values) == 1:
+        return blocks[0]
+
+    numeric = [float(value) for value in values]
+    minimum = min(numeric)
+    maximum = max(numeric)
+    if maximum == minimum:
+        return blocks[0] * len(numeric)
+
+    span = maximum - minimum
+    last_index = len(blocks) - 1
+    return "".join(
+        blocks[int(((value - minimum) / span) * last_index)] for value in numeric
+    )
 
 
 def format_currency(amount: float, currency: str = "USD") -> str:

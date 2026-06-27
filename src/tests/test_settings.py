@@ -67,8 +67,8 @@ class TestLastUsedParams:
         with open(self.last_used.params_file) as f:
             data = json.load(f)
 
-        # Verify plan is not saved (by design)
-        assert "plan" not in data
+        # Plan is persisted so it survives across runs (issue #162)
+        assert data["plan"] == "pro"
         assert data["theme"] == "dark"
         assert data["timezone"] == "UTC"
         assert data["time_format"] == "24h"
@@ -258,10 +258,13 @@ class TestSettings:
         assert settings.debug is False
         assert settings.version is False
         assert settings.clear is False
+        assert settings.api is False
+        assert settings.api_cache_file is None
+        assert settings.api_ttl_seconds == 180
 
     def test_plan_validator_valid_values(self) -> None:
         """Test plan validator with valid values."""
-        valid_plans: List[str] = ["pro", "max5", "max20", "custom"]
+        valid_plans: List[str] = ["pro", "max5", "max20", "team", "custom"]
 
         for plan in valid_plans:
             settings = Settings(plan=plan, _cli_parse_args=[])
@@ -274,6 +277,9 @@ class TestSettings:
 
         settings = Settings(plan="Max5", _cli_parse_args=[])
         assert settings.plan == "max5"
+
+        settings = Settings(plan="TEAM", _cli_parse_args=[])
+        assert settings.plan == "team"
 
     def test_plan_validator_invalid_value(self) -> None:
         """Test plan validator with invalid value."""
@@ -507,6 +513,24 @@ class TestSettings:
 
     @patch("claude_monitor.core.settings.Settings._get_system_timezone")
     @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    def test_load_with_last_used_local_timezone_alias(
+        self, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """`--timezone local` resolves before display code validates the timezone."""
+        mock_timezone.return_value = "Australia/Brisbane"
+        mock_time_format.return_value = "24h"
+
+        with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+            mock_instance = Mock()
+            mock_instance.load.return_value = {}
+            MockLastUsed.return_value = mock_instance
+
+            settings = Settings.load_with_last_used(["--timezone", "local"])
+
+            assert settings.timezone == "Australia/Brisbane"
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
     def test_load_with_last_used_debug_flag(
         self, mock_time_format: Mock, mock_timezone: Mock
     ) -> None:
@@ -573,6 +597,68 @@ class TestSettings:
             assert settings.plan == "custom"
             assert settings.custom_limit_tokens is None  # Should be reset
 
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    def test_load_with_last_used_restores_saved_plan(
+        self, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """A saved plan is restored when --plan is not given (issue #162)."""
+        mock_timezone.return_value = "UTC"
+        mock_time_format.return_value = "24h"
+
+        with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+            mock_instance = Mock()
+            mock_instance.load.return_value = {"plan": "max5"}
+            MockLastUsed.return_value = mock_instance
+
+            settings = Settings.load_with_last_used([])
+
+            assert settings.plan == "max5"
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    def test_load_with_last_used_cli_plan_overrides_saved(
+        self, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """An explicit --plan overrides the saved plan (issue #162)."""
+        mock_timezone.return_value = "UTC"
+        mock_time_format.return_value = "24h"
+
+        with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+            mock_instance = Mock()
+            mock_instance.load.return_value = {"plan": "max5"}
+            MockLastUsed.return_value = mock_instance
+
+            settings = Settings.load_with_last_used(["--plan", "pro"])
+
+            assert settings.plan == "pro"
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    @patch("claude_monitor.terminal.themes.BackgroundDetector")
+    def test_load_with_last_used_saved_theme_survives_autodetect(
+        self, MockDetector: Mock, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """A saved explicit theme is not overwritten by auto-detect (issues #102, #200)."""
+        mock_timezone.return_value = "UTC"
+        mock_time_format.return_value = "24h"
+
+        from claude_monitor.terminal.themes import BackgroundType
+
+        mock_detector_instance = Mock()
+        mock_detector_instance.detect_background.return_value = BackgroundType.LIGHT
+        MockDetector.return_value = mock_detector_instance
+
+        with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+            mock_instance = Mock()
+            mock_instance.load.return_value = {"theme": "dark"}
+            MockLastUsed.return_value = mock_instance
+
+            settings = Settings.load_with_last_used([])
+
+            assert settings.theme == "dark"
+            mock_detector_instance.detect_background.assert_not_called()
+
     def test_to_namespace(self) -> None:
         """Test conversion to argparse.Namespace."""
         settings = Settings(
@@ -613,6 +699,246 @@ class TestSettings:
         assert namespace.log_file is None
         assert namespace.reset_hour is None
         assert namespace.custom_limit_tokens is None
+
+    def test_hide_model_distribution_persisted_to_namespace(self) -> None:
+        """--hide-model-distribution defaults off and is carried into the namespace (#161)."""
+        assert Settings(_cli_parse_args=[]).hide_model_distribution is False
+
+        namespace = Settings(
+            hide_model_distribution=True, _cli_parse_args=[]
+        ).to_namespace()
+        assert namespace.hide_model_distribution is True
+
+    def test_header_and_emoji_flags_map_to_namespace(self) -> None:
+        """header/emoji default on; --no-header/--no-emoji flip them off (#57)."""
+        default = Settings(_cli_parse_args=[])
+        assert default.header is True
+        assert default.emoji is True
+        assert default.to_namespace().no_header is False
+        assert default.to_namespace().no_emoji is False
+
+        namespace = Settings(
+            header=False, emoji=False, _cli_parse_args=[]
+        ).to_namespace()
+        assert namespace.no_header is True
+        assert namespace.no_emoji is True
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    def test_cli_plan_equals_form_overrides_saved(
+        self, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """--plan=pro (equals form) must beat a saved plan, like --plan pro (codex P1)."""
+        mock_timezone.return_value = "UTC"
+        mock_time_format.return_value = "24h"
+
+        with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+            mock_instance = Mock()
+            mock_instance.load.return_value = {"plan": "max5"}
+            MockLastUsed.return_value = mock_instance
+
+            settings = Settings.load_with_last_used(["--plan=pro"])
+
+            assert settings.plan == "pro"
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    @patch("claude_monitor.terminal.themes.BackgroundDetector")
+    def test_auto_theme_persisted_as_auto_not_resolved(
+        self, MockDetector: Mock, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """Auto theme resolves for display but persists 'auto' so it keeps re-detecting (codex P2)."""
+        mock_timezone.return_value = "UTC"
+        mock_time_format.return_value = "24h"
+
+        from claude_monitor.terminal.themes import BackgroundType
+
+        detector = Mock()
+        detector.detect_background.return_value = BackgroundType.DARK
+        MockDetector.return_value = detector
+
+        with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+            mock_instance = Mock()
+            mock_instance.load.return_value = {}
+            MockLastUsed.return_value = mock_instance
+
+            settings = Settings.load_with_last_used([])
+
+            assert settings.theme == "dark"  # resolved for this run's display
+            persisted = mock_instance.save.call_args[0][0]
+            assert persisted.theme == "auto"  # re-detects next launch
+
+    def test_once_and_output_defaults_and_namespace(self) -> None:
+        """--once defaults off; --output defaults rich; both reach the namespace (#126)."""
+        default = Settings(_cli_parse_args=[])
+        assert default.once is False
+        assert default.output == "rich"
+
+        namespace = Settings(
+            once=True, output="json", _cli_parse_args=[]
+        ).to_namespace()
+        assert namespace.once is True
+        assert namespace.output == "json"
+
+    def test_output_validator_rejects_unknown(self) -> None:
+        """--output xml is rejected with a clear message (#126)."""
+        with pytest.raises(ValueError, match="Invalid output"):
+            Settings(output="xml", _cli_parse_args=[])
+
+    def test_output_lowercases_value(self) -> None:
+        assert Settings(output="JSON", _cli_parse_args=[]).output == "json"
+
+    def test_report_views_and_csv_output_reach_namespace(self) -> None:
+        """Warehouse reports add entries/sessions/burn-rate views and CSV output."""
+        for view in ("entries", "sessions", "burn-rate"):
+            settings = Settings(
+                view=view,
+                output="CSV",
+                warehouse_file="/tmp/usage.json",
+                _cli_parse_args=[],
+            )
+            namespace = settings.to_namespace()
+            assert settings.view == view
+            assert namespace.view == view
+            assert settings.output == "csv"
+            assert namespace.output == "csv"
+
+    def test_write_state_defaults_and_namespace(self) -> None:
+        """--write-state defaults off, --state-file default None; both reach the namespace (#184)."""
+        default = Settings(_cli_parse_args=[])
+        assert default.write_state is False
+        assert default.state_file is None
+
+        namespace = Settings(
+            write_state=True, state_file="/tmp/s.json", _cli_parse_args=[]
+        ).to_namespace()
+        assert namespace.write_state is True
+        assert namespace.state_file == "/tmp/s.json"
+
+    def test_warehouse_defaults_cli_and_namespace(self) -> None:
+        """The persistent warehouse is opt-in and carries its file/retention knobs."""
+        default = Settings(_cli_parse_args=[])
+        assert default.warehouse is False
+        assert default.warehouse_file is None
+        assert default.warehouse_retention_days == 365
+
+        namespace = Settings(
+            warehouse=True,
+            warehouse_file="/tmp/usage.json",
+            warehouse_retention_days=30,
+            _cli_parse_args=[],
+        ).to_namespace()
+        assert namespace.warehouse is True
+        assert namespace.warehouse_file == "/tmp/usage.json"
+        assert namespace.warehouse_retention_days == 30
+
+        parsed = Settings(
+            _cli_parse_args=[
+                "--warehouse",
+                "--warehouse-file",
+                "/tmp/cli-usage.json",
+                "--warehouse-retention-days",
+                "45",
+            ]
+        )
+        assert parsed.warehouse is True
+        assert parsed.warehouse_file == "/tmp/cli-usage.json"
+        assert parsed.warehouse_retention_days == 45
+
+    def test_api_usage_defaults_cli_and_namespace(self) -> None:
+        """The experimental OAuth usage API is opt-in and exposes cache knobs."""
+        default = Settings(_cli_parse_args=[])
+        assert default.api is False
+        assert default.api_cache_file is None
+        assert default.api_ttl_seconds == 180
+
+        namespace = Settings(
+            api=True,
+            api_cache_file="/tmp/api-cache.json",
+            api_ttl_seconds=45,
+            _cli_parse_args=[],
+        ).to_namespace()
+        assert namespace.api is True
+        assert namespace.api_cache_file == "/tmp/api-cache.json"
+        assert namespace.api_ttl_seconds == 45
+
+        parsed = Settings(
+            _cli_parse_args=[
+                "--api",
+                "--api-cache-file",
+                "/tmp/cli-api-cache.json",
+                "--api-ttl-seconds",
+                "60",
+            ]
+        )
+        assert parsed.api is True
+        assert parsed.api_cache_file == "/tmp/cli-api-cache.json"
+        assert parsed.api_ttl_seconds == 60
+
+    def test_table_formatter_flags_default_cli_and_namespace(self) -> None:
+        """PR #175's formatting knobs remain explicit and sparklines are opt-in."""
+        default = Settings(_cli_parse_args=[])
+        assert default.date_format is None
+        assert default.abbreviate_tokens is False
+        assert default.sparklines is False
+
+        namespace = Settings(
+            date_format="%d.%m.%Y",
+            abbreviate_tokens=True,
+            sparklines=True,
+            _cli_parse_args=[],
+        ).to_namespace()
+        assert namespace.date_format == "%d.%m.%Y"
+        assert namespace.abbreviate_tokens is True
+        assert namespace.sparklines is True
+
+        parsed = Settings(
+            _cli_parse_args=[
+                "--date-format",
+                "%d.%m.%Y",
+                "--abbreviate-tokens",
+                "--sparklines",
+            ]
+        )
+        assert parsed.date_format == "%d.%m.%Y"
+        assert parsed.abbreviate_tokens is True
+        assert parsed.sparklines is True
+
+    def test_compact_default_and_namespace(self) -> None:
+        """--compact defaults off and reaches the namespace (#65)."""
+        assert Settings(_cli_parse_args=[]).compact is False
+        assert Settings(compact=True, _cli_parse_args=[]).to_namespace().compact is True
+
+    def test_filter_models_default_and_namespace(self) -> None:
+        """--filter-models defaults to 'all' and reaches the namespace (#113)."""
+        assert Settings(_cli_parse_args=[]).filter_models == "all"
+        ns = Settings(filter_models="ANTHROPIC", _cli_parse_args=[]).to_namespace()
+        assert ns.filter_models == "anthropic"  # validated + lowercased
+
+    def test_filter_models_rejects_invalid(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            Settings(filter_models="openai", _cli_parse_args=[])
+
+    def test_data_paths_default_cli_and_namespace(self) -> None:
+        """--data-paths is a pydantic-settings list field, not a manual parser."""
+        default = Settings(_cli_parse_args=[])
+        assert default.data_paths == []
+        assert default.to_namespace().data_paths == []
+
+        parsed = Settings(
+            _cli_parse_args=["--data-paths", "/a", "--data-paths", "/b,/c"]
+        )
+        assert parsed.data_paths == ["/a", "/b", "/c"]
+        assert parsed.to_namespace().data_paths == ["/a", "/b", "/c"]
+
+    def test_data_paths_rejects_blank_values(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            Settings(data_paths=["/a", "  "], _cli_parse_args=[])
 
 
 class TestSettingsIntegration:

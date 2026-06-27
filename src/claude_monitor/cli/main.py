@@ -2,7 +2,9 @@
 
 import argparse
 import contextlib
+import json
 import logging
+import os
 import signal
 import sys
 import time
@@ -23,22 +25,41 @@ from claude_monitor.core.plans import Plans, PlanType, get_token_limit
 from claude_monitor.core.settings import Settings
 from claude_monitor.data.aggregator import UsageAggregator
 from claude_monitor.data.analysis import analyze_usage
+from claude_monitor.data.reports import build_warehouse_report, format_report_csv
+from claude_monitor.data.warehouse import UsageWarehouse, default_warehouse_path
 from claude_monitor.error_handling import report_error
 from claude_monitor.monitoring.orchestrator import MonitoringOrchestrator
+from claude_monitor.output import (
+    build_snapshot,
+    format_compact,
+    format_json,
+    format_terminal_title,
+    format_text,
+)
+from claude_monitor.output.api_usage import read_api_limits
+from claude_monitor.output.official import (
+    capture_statusline,
+    format_statusline,
+    read_official_limits,
+)
+from claude_monitor.output.state import default_state_path, write_state_file
 from claude_monitor.terminal.manager import (
     enter_alternate_screen,
     handle_cleanup_and_exit,
     handle_error_and_exit,
     restore_terminal,
+    set_terminal_title,
     setup_terminal,
 )
 from claude_monitor.terminal.themes import get_themed_console, print_themed
 from claude_monitor.ui.display_controller import DisplayController
 from claude_monitor.ui.table_views import TableViewsController
+from claude_monitor.utils.wsl import WSLDetector
 
 # Type aliases for CLI callbacks
 DataUpdateCallback = Callable[[Dict[str, Any]], None]
 SessionChangeCallback = Callable[[str, str, Optional[Dict[str, Any]]], None]
+WAREHOUSE_REPORT_VIEWS = {"entries", "sessions", "burn-rate"}
 
 
 def get_standard_claude_paths() -> List[str]:
@@ -46,8 +67,39 @@ def get_standard_claude_paths() -> List[str]:
     return ["~/.claude/projects", "~/.config/claude/projects"]
 
 
+def _env_claude_paths() -> List[str]:
+    """Data paths derived from CLAUDE_CONFIG_DIR (comma-separated dirs allowed)."""
+    raw = os.environ.get("CLAUDE_CONFIG_DIR", "")
+    return [
+        str(Path(part.strip()) / "projects") for part in raw.split(",") if part.strip()
+    ]
+
+
+_WSL_DETECTOR: Optional[WSLDetector] = None
+
+
+def _get_wsl_detector() -> WSLDetector:
+    global _WSL_DETECTOR
+    if _WSL_DETECTOR is None:
+        _WSL_DETECTOR = WSLDetector()
+    return _WSL_DETECTOR
+
+
+def _wsl_claude_paths() -> List[str]:
+    return _get_wsl_detector().data_paths()
+
+
+def _candidate_claude_paths(custom_paths: Optional[List[str]] = None) -> List[str]:
+    if custom_paths:
+        return [str(path) for path in custom_paths]
+    return _env_claude_paths() + get_standard_claude_paths() + _wsl_claude_paths()
+
+
 def discover_claude_data_paths(custom_paths: Optional[List[str]] = None) -> List[Path]:
     """Discover all available Claude data directories.
+
+    When no custom paths are given, CLAUDE_CONFIG_DIR (if set) is checked before the
+    standard locations, so a configured directory takes precedence.
 
     Args:
         custom_paths: Optional list of custom paths to check instead of standard ones
@@ -55,18 +107,213 @@ def discover_claude_data_paths(custom_paths: Optional[List[str]] = None) -> List
     Returns:
         List of Path objects for existing Claude data directories
     """
-    paths_to_check: List[str] = (
-        [str(p) for p in custom_paths] if custom_paths else get_standard_claude_paths()
-    )
+    paths_to_check = _candidate_claude_paths(custom_paths)
 
     discovered_paths: List[Path] = []
+    seen: set[Path] = set()
 
     for path_str in paths_to_check:
         path = Path(path_str).expanduser().resolve()
+        if path in seen:
+            continue
+        seen.add(path)
         if path.exists() and path.is_dir():
             discovered_paths.append(path)
 
     return discovered_paths
+
+
+def _no_data_diagnostic(searched_paths: List[str]) -> str:
+    """Build a clear 'no data' message that names where we looked (issue #110)."""
+    locations = "\n".join(f"  - {Path(p).expanduser()}" for p in searched_paths)
+    return (
+        "No Claude data directory found.\n\n"
+        f"Searched:\n{locations}\n\n"
+        "Make sure you have used Claude Code at least once so it has written "
+        "usage logs (JSONL), then run claude-monitor again."
+    )
+
+
+def _maybe_write_state(args: argparse.Namespace, snapshot: dict) -> bool:
+    """Write the snapshot to the state file if --write-state is set (issue #184).
+
+    Returns True on success (or when not requested); False if the write failed.
+    The live loop ignores the result (a transient write error must not break
+    monitoring); one-shot mode surfaces it so a requested write isn't silently
+    dropped.
+    """
+    if not getattr(args, "write_state", False):
+        return True
+    try:
+        path = (
+            Path(args.state_file)
+            if getattr(args, "state_file", None)
+            else default_state_path()
+        )
+        write_state_file(snapshot, path)
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to write state file: {e}")
+        return False
+
+
+def _maybe_set_terminal_title(args: argparse.Namespace, snapshot: dict) -> None:
+    if not getattr(args, "set_terminal_title", False):
+        return
+    template = getattr(args, "title_format", "{pct}% {plan}")
+    set_terminal_title(format_terminal_title(snapshot, template))
+
+
+def _has_fresh_limit_percentage(limits: Optional[dict]) -> bool:
+    if not limits or limits.get("stale"):
+        return False
+    for key in ("five_hour", "seven_day"):
+        window = limits.get(key)
+        if isinstance(window, dict) and window.get("used_percentage") is not None:
+            return True
+    return False
+
+
+def _read_optional_api_limits(
+    args: argparse.Namespace, official: Optional[dict], now_epoch: int
+) -> Optional[dict]:
+    if not getattr(args, "api", False):
+        return None
+    if _has_fresh_limit_percentage(official):
+        return None
+
+    cache_file = getattr(args, "api_cache_file", None)
+    ttl_seconds = getattr(args, "api_ttl_seconds", 180)
+    return read_api_limits(
+        enabled=True,
+        cache_path=Path(cache_file) if cache_file else None,
+        now_epoch=now_epoch,
+        ttl_seconds=ttl_seconds,
+    )
+
+
+def _effective_token_limit(args: argparse.Namespace, base_limit: int) -> int:
+    """Resolve the token limit to display.
+
+    An explicit ``--custom-limit-tokens`` always wins over a computed base
+    (the orchestrator recomputes a P90 estimate for custom plans and would
+    otherwise mask the user's chosen limit). Shared by the one-shot and live
+    paths so ``--compact`` shows the same denominator either way.
+    """
+    if getattr(args, "plan", None) == "custom" and getattr(
+        args, "custom_limit_tokens", None
+    ):
+        return int(args.custom_limit_tokens)
+    return base_limit
+
+
+def _run_once(args: argparse.Namespace) -> int:
+    """One-shot mode: pull usage once, print a snapshot, and exit (issue #126).
+
+    Returns an automation-friendly exit code: 0 ok, 10 near limit, 11 limit hit,
+    20 no active session, 30 no data / config error.
+    """
+    configured_paths = getattr(args, "data_paths", [])
+    data_paths = discover_claude_data_paths(configured_paths)
+    if not data_paths:
+        print(
+            _no_data_diagnostic(_candidate_claude_paths(configured_paths)),
+            file=sys.stderr,
+        )
+        return 30
+
+    data_path_values = [str(path) for path in data_paths]
+    args.data_paths = data_path_values
+    args.data_path = data_path_values[0]
+
+    orchestrator = MonitoringOrchestrator(
+        update_interval=getattr(args, "refresh_rate", 10), data_path=data_path_values
+    )
+    orchestrator.set_args(args)
+    try:
+        monitoring_data = orchestrator.force_refresh()
+    finally:
+        orchestrator.stop()
+
+    if monitoring_data is None:
+        print("No usage data available yet.", file=sys.stderr)
+        return 30
+
+    data = monitoring_data.get("data", {}) or {}
+    blocks = data.get("blocks", []) or []
+    # Honor an explicit --custom-limit-tokens, mirroring the live path; otherwise
+    # use the orchestrator's token_limit or a P90 estimate.
+    token_limit = _effective_token_limit(
+        args, monitoring_data.get("token_limit") or get_token_limit(args.plan, blocks)
+    )
+
+    now_epoch = int(time.time())
+    official = read_official_limits(now_epoch=now_epoch)
+    api_limits = _read_optional_api_limits(args, official, now_epoch)
+    snapshot = build_snapshot(
+        data, args, token_limit, official=official, api_limits=api_limits
+    )
+    _maybe_set_terminal_title(args, snapshot)
+    output = getattr(args, "output", "rich")
+    if output == "json":
+        print(format_json(snapshot))
+    elif output == "text":
+        print(format_text(snapshot))
+    elif output == "csv":
+        print(
+            "CSV output is available for warehouse report views "
+            "(--view entries|sessions|burn-rate).",
+            file=sys.stderr,
+        )
+        return 30
+    elif getattr(args, "compact", False):
+        print(format_compact(snapshot))
+    else:
+        console = get_themed_console(
+            force_theme=args.theme.lower() if getattr(args, "theme", None) else None
+        )
+        console.print(
+            DisplayController().create_data_display(
+                data, args, token_limit, snapshot=snapshot
+            )
+        )
+
+    if not _maybe_write_state(args, snapshot):
+        print("Failed to write state file (see logs)", file=sys.stderr)
+        return 30
+    return snapshot["status"]["code"]
+
+
+def _run_statusline() -> int:
+    """Capture official ``rate_limits`` from Claude Code's statusline stdin and
+    print the status bar line (trust keystone producer).
+
+    Wire it up in Claude Code ``settings.json``::
+
+        "statusLine": {"type": "command", "command": "claude-monitor --statusline"}
+
+    Must be fast and never raise — a crash here would blank the user's status bar.
+    """
+    try:
+        raw = sys.stdin.read()
+        payload = json.loads(raw) if raw.strip() else {}
+    except Exception:  # unreadable stdin or non-JSON: degrade, don't crash
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    capture = None
+    try:
+        capture = capture_statusline(payload, now_epoch=int(time.time()))
+    except Exception as e:  # a write error must not blank the status bar
+        logging.getLogger(__name__).debug(f"statusline capture failed: {e}")
+
+    try:
+        line = format_statusline(payload, capture)
+    except Exception:  # never let a formatting edge case blank the bar
+        line = "claude-monitor"
+    print(line)
+    return 0
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -77,6 +324,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if "--version" in argv or "-v" in argv:
         print(f"claude-monitor {__version__}")
         return 0
+
+    # The statusline hook runs on every Claude Code refresh (sub-second), so it
+    # short-circuits before the heavy settings/logging/timezone setup.
+    if "--statusline" in argv:
+        return _run_statusline()
+
+    once_mode = "--once" in argv
+
+    env_error = validate_cli_environment()
+    if env_error:
+        print(env_error, file=sys.stderr)
+        return 30 if once_mode else 1
 
     try:
         settings = Settings.load_with_last_used(argv)
@@ -93,6 +352,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         args = settings.to_namespace()
 
+        if settings.view in WAREHOUSE_REPORT_VIEWS:
+            return _run_warehouse_report(args)
+
+        if settings.once:
+            return _run_once(args)
+
         _run_monitoring(args)
 
         return 0
@@ -104,7 +369,39 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger = logging.getLogger(__name__)
         logger.error(f"Monitor failed: {e}", exc_info=True)
         traceback.print_exc()
-        return 1
+        return 30 if once_mode else 1
+
+
+def _run_warehouse_report(args: argparse.Namespace) -> int:
+    """Run a warehouse-backed report/export view."""
+    output = getattr(args, "output", "json")
+    if output not in {"json", "csv"}:
+        print(
+            "Warehouse report views require --output json or --output csv.",
+            file=sys.stderr,
+        )
+        return 30
+
+    warehouse_path = (
+        Path(args.warehouse_file)
+        if getattr(args, "warehouse_file", None)
+        else default_warehouse_path()
+    )
+    try:
+        report = build_warehouse_report(
+            UsageWarehouse(warehouse_path),
+            getattr(args, "view", "entries"),
+            plan=getattr(args, "plan", "custom"),
+        )
+    except (OSError, ValueError, TypeError) as e:
+        print(f"Failed to build warehouse report: {e}", file=sys.stderr)
+        return 30
+
+    if output == "csv":
+        print(format_report_csv(report), end="")
+    else:
+        print(format_json(report))
+    return 0
 
 
 def _run_monitoring(args: argparse.Namespace) -> None:
@@ -120,21 +417,28 @@ def _run_monitoring(args: argparse.Namespace) -> None:
     live_display_active: bool = False
 
     try:
-        data_paths: List[Path] = discover_claude_data_paths()
+        configured_paths = getattr(args, "data_paths", [])
+        data_paths: List[Path] = discover_claude_data_paths(configured_paths)
         if not data_paths:
-            print_themed("No Claude data directory found", style="error")
+            print_themed(
+                _no_data_diagnostic(_candidate_claude_paths(configured_paths)),
+                style="error",
+            )
             return
 
-        data_path: Path = data_paths[0]
+        data_path_values = [str(path) for path in data_paths]
+        args.data_paths = data_path_values
+        args.data_path = data_path_values[0]
+        data_path: Union[Path, List[str]] = data_path_values
         logger = logging.getLogger(__name__)
-        logger.info(f"Using data path: {data_path}")
+        logger.info(f"Using data paths: {data_path_values}")
 
         # Handle different view modes
         if view_mode in ["daily", "monthly"]:
             _run_table_view(args, data_path, view_mode, console)
             return
 
-        token_limit: int = _get_initial_token_limit(args, str(data_path))
+        token_limit: int = _get_initial_token_limit(args, data_path)
 
         display_controller = DisplayController()
         display_controller.live_manager._console = console
@@ -167,7 +471,7 @@ def _run_monitoring(args: argparse.Namespace) -> None:
                 update_interval=(
                     args.refresh_rate if hasattr(args, "refresh_rate") else 10
                 ),
-                data_path=str(data_path),
+                data_path=data_path_values,
             )
             orchestrator.set_args(args)
 
@@ -188,12 +492,37 @@ def _run_monitoring(args: argparse.Namespace) -> None:
                             total_tokens: int = active_blocks[0].get("totalTokens", 0)
                             logger.debug(f"Active block tokens: {total_tokens}")
 
-                    renderable = display_controller.create_data_display(
-                        data, args, monitoring_data.get("token_limit", token_limit)
+                    # `.get(key, default)` returns None if the key is present but
+                    # None, so fall back explicitly to the last known good limit.
+                    reported_limit = monitoring_data.get("token_limit")
+                    token_limit_now = _effective_token_limit(
+                        args, reported_limit if reported_limit else token_limit
                     )
+                    now_epoch = int(time.time())
+                    official = read_official_limits(now_epoch=now_epoch)
+                    api_limits = _read_optional_api_limits(args, official, now_epoch)
+                    snapshot = build_snapshot(
+                        data,
+                        args,
+                        token_limit_now,
+                        official=official,
+                        api_limits=api_limits,
+                    )
+
+                    _maybe_set_terminal_title(args, snapshot)
+
+                    if getattr(args, "compact", False):
+                        renderable = format_compact(snapshot)
+                    else:
+                        renderable = display_controller.create_data_display(
+                            data, args, token_limit_now, snapshot=snapshot
+                        )
 
                     if live_display:
                         live_display.update(renderable)
+
+                    if getattr(args, "write_state", False):
+                        _maybe_write_state(args, snapshot)
 
                 except Exception as e:
                     logger.error(f"Display update error: {e}", exc_info=True)
@@ -261,7 +590,7 @@ def _run_monitoring(args: argparse.Namespace) -> None:
 
 
 def _get_initial_token_limit(
-    args: argparse.Namespace, data_path: Union[str, Path]
+    args: argparse.Namespace, data_path: Union[str, Path, List[str]]
 ) -> int:
     """Get initial token limit for the plan."""
     logger = logging.getLogger(__name__)
@@ -287,7 +616,8 @@ def _get_initial_token_limit(
                 hours_back=96 * 2,
                 quick_start=False,
                 use_cache=False,
-                data_path=str(data_path),
+                data_path=data_path,
+                filter_models=getattr(args, "filter_models", "all"),
             )
 
             if usage_data and "blocks" in usage_data:
@@ -349,37 +679,25 @@ def handle_application_error(
 
 
 def validate_cli_environment() -> Optional[str]:
-    """Validate the CLI environment and return error message if invalid.
+    """Validate the runtime environment, returning an error message if unsupported.
 
     Returns:
-        Error message if validation fails, None if successful
+        A user-facing message if the environment is unsupported, otherwise None.
     """
-    try:
-        # Check Python version compatibility
-        if sys.version_info < (3, 8):
-            return f"Python 3.8+ required, found {sys.version_info.major}.{sys.version_info.minor}"
-
-        # Check for required dependencies
-        required_modules = ["rich", "pydantic", "watchdog"]
-        missing_modules: List[str] = []
-
-        for module in required_modules:
-            try:
-                __import__(module)
-            except ImportError:
-                missing_modules.append(module)
-
-        if missing_modules:
-            return f"Missing required modules: {', '.join(missing_modules)}"
-
-        return None
-
-    except Exception as e:
-        return f"Environment validation failed: {e}"
+    if sys.version_info < (3, 9):
+        return (
+            "Python 3.9+ is required, but you are running "
+            f"{sys.version_info[0]}.{sys.version_info[1]}. "
+            "Install a newer Python, e.g.: uv tool install claude-monitor --python 3.12"
+        )
+    return None
 
 
 def _run_table_view(
-    args: argparse.Namespace, data_path: Path, view_mode: str, console: Console
+    args: argparse.Namespace,
+    data_path: Union[Path, List[str]],
+    view_mode: str,
+    console: Console,
 ) -> None:
     """Run table view mode (daily/monthly)."""
     logger = logging.getLogger(__name__)
@@ -387,9 +705,11 @@ def _run_table_view(
     try:
         # Create aggregator with appropriate mode
         aggregator = UsageAggregator(
-            data_path=str(data_path),
+            data_path=data_path,
             aggregation_mode=view_mode,
             timezone=args.timezone,
+            reset_hour=getattr(args, "reset_hour", None),
+            filter_models=getattr(args, "filter_models", "all"),
         )
 
         # Create table controller
@@ -410,6 +730,9 @@ def _run_table_view(
             timezone=args.timezone,
             plan=args.plan,
             token_limit=_get_initial_token_limit(args, data_path),
+            date_format=getattr(args, "date_format", None),
+            abbreviate_tokens=getattr(args, "abbreviate_tokens", False),
+            sparklines=getattr(args, "sparklines", False),
         )
 
         # Wait for user to press Ctrl+C

@@ -5,6 +5,7 @@ in table format using Rich library.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
 from rich.align import Align
@@ -14,7 +15,12 @@ from rich.table import Table
 from rich.text import Text
 
 # Removed theme import - using direct styles
-from claude_monitor.utils.formatting import format_currency, format_number
+from claude_monitor.utils.formatting import (
+    format_currency,
+    format_number,
+    format_number_abbreviated,
+    render_sparkline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +46,11 @@ class TableViewsController:
         self.border_style = "bright_blue"
 
     def _create_base_table(
-        self, title: str, period_column_name: str, period_column_width: int
+        self,
+        title: str,
+        period_column_name: str,
+        period_column_width: int,
+        sparklines: bool = False,
     ) -> Table:
         """Create a base table with common structure.
 
@@ -81,11 +91,21 @@ class TableViewsController:
         table.add_column(
             "Cost (USD)", style=self.success_style, justify="right", width=10
         )
+        if sparklines:
+            table.add_column(
+                "Trend", style=self.accent_style, justify="right", width=12
+            )
 
         return table
 
     def _add_data_rows(
-        self, table: Table, data_list: List[Dict[str, Any]], period_key: str
+        self,
+        table: Table,
+        data_list: List[Dict[str, Any]],
+        period_key: str,
+        date_format: Optional[str] = None,
+        abbreviate_tokens: bool = False,
+        sparklines: bool = False,
     ) -> None:
         """Add data rows to the table.
 
@@ -94,27 +114,33 @@ class TableViewsController:
             data_list: List of data dictionaries
             period_key: Key to use for period column ('date' or 'month')
         """
-        for data in data_list:
+        totals = [self._total_tokens(data) for data in data_list]
+        for index, data in enumerate(data_list):
             models_text = self._format_models(data["models_used"])
-            total_tokens = (
-                data["input_tokens"]
-                + data["output_tokens"]
-                + data["cache_creation_tokens"]
-                + data["cache_read_tokens"]
-            )
-
-            table.add_row(
-                data[period_key],
+            total_tokens = totals[index]
+            row = [
+                self._format_period(data[period_key], period_key, date_format),
                 models_text,
-                format_number(data["input_tokens"]),
-                format_number(data["output_tokens"]),
-                format_number(data["cache_creation_tokens"]),
-                format_number(data["cache_read_tokens"]),
-                format_number(total_tokens),
+                self._format_token_count(data["input_tokens"], abbreviate_tokens),
+                self._format_token_count(data["output_tokens"], abbreviate_tokens),
+                self._format_token_count(
+                    data["cache_creation_tokens"], abbreviate_tokens
+                ),
+                self._format_token_count(data["cache_read_tokens"], abbreviate_tokens),
+                self._format_token_count(total_tokens, abbreviate_tokens),
                 format_currency(data["total_cost"]),
-            )
+            ]
+            if sparklines:
+                row.append(render_sparkline(totals[: index + 1]))
+            table.add_row(*row)
 
-    def _add_totals_row(self, table: Table, totals: Dict[str, Any]) -> None:
+    def _add_totals_row(
+        self,
+        table: Table,
+        totals: Dict[str, Any],
+        abbreviate_tokens: bool = False,
+        sparklines: bool = False,
+    ) -> None:
         """Add totals row to the table.
 
         Args:
@@ -122,27 +148,80 @@ class TableViewsController:
             totals: Dictionary with total statistics
         """
         # Add separator
-        table.add_row("", "", "", "", "", "", "", "")
+        table.add_row(*([""] * (9 if sparklines else 8)))
 
         # Add totals row
-        table.add_row(
+        row = [
             Text("Total", style=self.accent_style),
             "",
-            Text(format_number(totals["input_tokens"]), style=self.accent_style),
-            Text(format_number(totals["output_tokens"]), style=self.accent_style),
             Text(
-                format_number(totals["cache_creation_tokens"]), style=self.accent_style
+                self._format_token_count(totals["input_tokens"], abbreviate_tokens),
+                style=self.accent_style,
             ),
-            Text(format_number(totals["cache_read_tokens"]), style=self.accent_style),
-            Text(format_number(totals["total_tokens"]), style=self.accent_style),
+            Text(
+                self._format_token_count(totals["output_tokens"], abbreviate_tokens),
+                style=self.accent_style,
+            ),
+            Text(
+                self._format_token_count(
+                    totals["cache_creation_tokens"], abbreviate_tokens
+                ),
+                style=self.accent_style,
+            ),
+            Text(
+                self._format_token_count(
+                    totals["cache_read_tokens"], abbreviate_tokens
+                ),
+                style=self.accent_style,
+            ),
+            Text(
+                self._format_token_count(totals["total_tokens"], abbreviate_tokens),
+                style=self.accent_style,
+            ),
             Text(format_currency(totals["total_cost"]), style=self.success_style),
+        ]
+        if sparklines:
+            row.append("")
+        table.add_row(*row)
+
+    @staticmethod
+    def _total_tokens(data: Dict[str, Any]) -> int:
+        return (
+            int(data["input_tokens"])
+            + int(data["output_tokens"])
+            + int(data["cache_creation_tokens"])
+            + int(data["cache_read_tokens"])
         )
+
+    @staticmethod
+    def _format_token_count(value: Union[int, float], abbreviate_tokens: bool) -> str:
+        if abbreviate_tokens:
+            return format_number_abbreviated(value)
+        return format_number(value)
+
+    @staticmethod
+    def _format_period(
+        value: str, period_key: str, date_format: Optional[str] = None
+    ) -> str:
+        if not date_format:
+            return value
+        try:
+            if period_key == "date":
+                return datetime.strptime(value, "%Y-%m-%d").strftime(date_format)
+            if period_key == "month":
+                return datetime.strptime(value, "%Y-%m").strftime(date_format)
+        except ValueError:
+            return value
+        return value
 
     def create_daily_table(
         self,
         daily_data: List[Dict[str, Any]],
         totals: Dict[str, Any],
         timezone: str = "UTC",
+        date_format: Optional[str] = None,
+        abbreviate_tokens: bool = False,
+        sparklines: bool = False,
     ) -> Table:
         """Create a daily statistics table.
 
@@ -159,13 +238,23 @@ class TableViewsController:
             title=f"Claude Code Token Usage Report - Daily ({timezone})",
             period_column_name="Date",
             period_column_width=12,
+            sparklines=sparklines,
         )
 
         # Add data rows
-        self._add_data_rows(table, daily_data, "date")
+        self._add_data_rows(
+            table,
+            daily_data,
+            "date",
+            date_format=date_format,
+            abbreviate_tokens=abbreviate_tokens,
+            sparklines=sparklines,
+        )
 
         # Add totals
-        self._add_totals_row(table, totals)
+        self._add_totals_row(
+            table, totals, abbreviate_tokens=abbreviate_tokens, sparklines=sparklines
+        )
 
         return table
 
@@ -174,6 +263,9 @@ class TableViewsController:
         monthly_data: List[Dict[str, Any]],
         totals: Dict[str, Any],
         timezone: str = "UTC",
+        date_format: Optional[str] = None,
+        abbreviate_tokens: bool = False,
+        sparklines: bool = False,
     ) -> Table:
         """Create a monthly statistics table.
 
@@ -190,13 +282,23 @@ class TableViewsController:
             title=f"Claude Code Token Usage Report - Monthly ({timezone})",
             period_column_name="Month",
             period_column_width=10,
+            sparklines=sparklines,
         )
 
         # Add data rows
-        self._add_data_rows(table, monthly_data, "month")
+        self._add_data_rows(
+            table,
+            monthly_data,
+            "month",
+            date_format=date_format,
+            abbreviate_tokens=abbreviate_tokens,
+            sparklines=sparklines,
+        )
 
         # Add totals
-        self._add_totals_row(table, totals)
+        self._add_totals_row(
+            table, totals, abbreviate_tokens=abbreviate_tokens, sparklines=sparklines
+        )
 
         return table
 
@@ -293,6 +395,9 @@ class TableViewsController:
         totals: Dict[str, Any],
         view_type: str,
         timezone: str = "UTC",
+        date_format: Optional[str] = None,
+        abbreviate_tokens: bool = False,
+        sparklines: bool = False,
     ) -> Table:
         """Create a table for either daily or monthly aggregated data.
 
@@ -309,9 +414,23 @@ class TableViewsController:
             ValueError: If view_type is not 'daily' or 'monthly'
         """
         if view_type == "daily":
-            return self.create_daily_table(aggregate_data, totals, timezone)
+            return self.create_daily_table(
+                aggregate_data,
+                totals,
+                timezone,
+                date_format=date_format,
+                abbreviate_tokens=abbreviate_tokens,
+                sparklines=sparklines,
+            )
         elif view_type == "monthly":
-            return self.create_monthly_table(aggregate_data, totals, timezone)
+            return self.create_monthly_table(
+                aggregate_data,
+                totals,
+                timezone,
+                date_format=date_format,
+                abbreviate_tokens=abbreviate_tokens,
+                sparklines=sparklines,
+            )
         else:
             raise ValueError(f"Invalid view type: {view_type}")
 
@@ -323,6 +442,9 @@ class TableViewsController:
         plan: str,
         token_limit: int,
         console: Optional[Console] = None,
+        date_format: Optional[str] = None,
+        abbreviate_tokens: bool = False,
+        sparklines: bool = False,
     ) -> None:
         """Display aggregated view with table and summary.
 
@@ -333,6 +455,9 @@ class TableViewsController:
             plan: Plan type
             token_limit: Token limit for the plan
             console: Optional Console instance
+            date_format: Optional strftime-compatible date format
+            abbreviate_tokens: Whether to abbreviate token counts
+            sparklines: Whether to show opt-in trend sparklines
         """
         if not data:
             no_data_display = self.create_no_data_display(view_mode)
@@ -369,7 +494,15 @@ class TableViewsController:
         summary_panel = self.create_summary_panel(view_mode, totals, period)
 
         # Create and display table
-        table = self.create_aggregate_table(data, totals, view_mode, timezone)
+        table = self.create_aggregate_table(
+            data,
+            totals,
+            view_mode,
+            timezone,
+            date_format=date_format,
+            abbreviate_tokens=abbreviate_tokens,
+            sparklines=sparklines,
+        )
 
         # Display using console if provided
         if console:

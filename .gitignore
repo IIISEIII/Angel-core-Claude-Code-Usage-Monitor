@@ -216,3 +216,7 @@ logs/
 # Local linting scripts
 lint*.py
 lint*.sh
+
+# Local planning/analysis docs (not for upstream)
+/REFACTOR/
+/docs/

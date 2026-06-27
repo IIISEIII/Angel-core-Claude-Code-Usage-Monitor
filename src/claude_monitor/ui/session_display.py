@@ -3,6 +3,8 @@
 Handles formatting of active session screens and session data display.
 """
 
+import math
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
@@ -16,10 +18,25 @@ from claude_monitor.ui.progress_bars import (
     TimeProgressBar,
     TokenProgressBar,
 )
+from claude_monitor.utils.display_width import (
+    ascii_fallback_enabled,
+    pad_to_display_width,
+)
 from claude_monitor.utils.time_utils import (
     format_display_time,
     get_time_format_preference,
     percentage,
+)
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f300-\U0001faff"  # emoji & pictographs
+    "\U00002600-\U000027bf"  # misc symbols, dingbats
+    "\U0001f1e6-\U0001f1ff"  # regional indicators
+    "\u2b00-\u2bff"  # misc symbols and arrows
+    "\u2300-\u23ff"  # misc technical (clocks, etc.)
+    "\ufe0f"  # variation selector-16
+    "]"
 )
 
 
@@ -54,6 +71,8 @@ class SessionDisplayData:
 
 class SessionDisplayComponent:
     """Main component for displaying active session information."""
+
+    WIDE_BAR_COLUMN: int = 25
 
     def __init__(self):
         """Initialize session display component with sub-components."""
@@ -92,7 +111,76 @@ class SessionDisplayComponent:
                 filled, filled_style=bar_style, empty_style="table.border"
             )
 
+        if ascii_fallback_enabled():
+            color = "!"
+
         return f"{color} [{filled_bar}]"
+
+    def _metric_prefix(self, icon: str, label: str) -> str:
+        """Return a Rich prefix padded by terminal display cells."""
+        return pad_to_display_width(f"{icon} [value]{label}:[/]", self.WIDE_BAR_COLUMN)
+
+    @staticmethod
+    def _limit_confidence_suffix(confidence: Optional[str], stale: bool = False) -> str:
+        labels = {
+            "official": "official",
+            "experimental": "experimental",
+            "local_estimate": "local estimate",
+            "unknown": "unknown",
+        }
+        label = labels.get(confidence or "")
+        if not label:
+            return ""
+        if stale:
+            label = f"{label}, stale"
+        return f" [dim]({label})[/]"
+
+    @staticmethod
+    def _token_detail_suffix(label: Optional[str]) -> str:
+        if not label:
+            return ""
+        return f" [dim]({label})[/]"
+
+    @staticmethod
+    def _finite_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    def _snapshot_limit_overlay(self, snapshot: Optional[dict]) -> dict[str, Any]:
+        if not snapshot:
+            return {}
+
+        five_hour = (snapshot.get("limits") or {}).get("five_hour") or {}
+        pct = self._finite_float(five_hour.get("used_percentage"))
+        if pct is None:
+            return {}
+
+        confidence = five_hour.get("confidence") or "unknown"
+        tokens_used = self._finite_float(five_hour.get("tokens_used"))
+        token_limit = self._finite_float(five_hour.get("token_limit"))
+        overlay: dict[str, Any] = {
+            "usage_percentage": pct,
+            "limit_confidence": confidence,
+            "limit_stale": bool(snapshot.get("stale"))
+            and confidence in {"official", "experimental"},
+        }
+        if tokens_used is not None:
+            overlay["tokens_used"] = int(tokens_used)
+        if token_limit is not None and token_limit > 0:
+            overlay["token_limit"] = int(token_limit)
+        if tokens_used is None and confidence != "local_estimate":
+            overlay["limit_tokens_label"] = "local estimate unavailable"
+        return overlay
+
+    @staticmethod
+    def _separator_line(width: int = 60) -> str:
+        char = "-" if ascii_fallback_enabled() else "─"
+        return f"[separator]{char * width}[/]"
 
     def format_active_session_screen_v2(self, data: SessionDisplayData) -> list[str]:
         """Format complete active session screen using data class.
@@ -181,12 +269,19 @@ class SessionDisplayComponent:
         """
 
         screen_buffer = []
+        limit_suffix = self._limit_confidence_suffix(
+            kwargs.get("limit_confidence"), kwargs.get("limit_stale", False)
+        )
+        token_detail_suffix = self._token_detail_suffix(
+            kwargs.get("limit_tokens_label")
+        )
 
-        header_manager = HeaderManager()
-        screen_buffer.extend(header_manager.create_header(plan, timezone))
+        if not kwargs.get("no_header", False):
+            header_manager = HeaderManager()
+            screen_buffer.extend(header_manager.create_header(plan, timezone))
 
-        if plan in ["custom", "pro", "max5", "max20"]:
-            from claude_monitor.core.plans import DEFAULT_COST_LIMIT
+        if plan in ["custom", "pro", "max5", "max20", "team"]:
+            from claude_monitor.core.plans import DEFAULT_COST_LIMIT, Plans
 
             cost_limit_p90 = kwargs.get("cost_limit_p90", DEFAULT_COST_LIMIT)
             messages_limit_p90 = kwargs.get("messages_limit_p90", 1500)
@@ -197,9 +292,13 @@ class SessionDisplayComponent:
                 screen_buffer.append(
                     "[dim]Based on your historical usage patterns when hitting limits (P90)[/dim]"
                 )
-                screen_buffer.append(f"[separator]{'─' * 60}[/]")
+                screen_buffer.append(self._separator_line())
             else:
                 screen_buffer.append("")
+                plan_info = Plans.get_plan_info(plan)
+                if plan_info["unverified"] and plan_info["guidance"]:
+                    screen_buffer.append(f"[warning]{plan_info['guidance']}[/]")
+                    screen_buffer.append(self._separator_line())
 
             cost_percentage = (
                 min(100, percentage(session_cost, cost_limit_p90))
@@ -208,13 +307,13 @@ class SessionDisplayComponent:
             )
             cost_bar = self._render_wide_progress_bar(cost_percentage)
             screen_buffer.append(
-                f"💰 [value]Cost Usage:[/]           {cost_bar} {cost_percentage:4.1f}%    [value]${session_cost:.2f}[/] / [dim]${cost_limit_p90:.2f}[/]"
+                f"{self._metric_prefix('💰', 'Cost Usage')}{cost_bar} {cost_percentage:4.1f}%    [value]${session_cost:.2f}[/] / [dim]${cost_limit_p90:.2f}[/]"
             )
             screen_buffer.append("")
 
             token_bar = self._render_wide_progress_bar(usage_percentage)
             screen_buffer.append(
-                f"📊 [value]Token Usage:[/]          {token_bar} {usage_percentage:4.1f}%    [value]{tokens_used:,}[/] / [dim]{token_limit:,}[/]"
+                f"{self._metric_prefix('📊', 'Token Usage')}{token_bar} {usage_percentage:4.1f}%{limit_suffix}    [value]{tokens_used:,}[/] / [dim]{token_limit:,}[/]{token_detail_suffix}"
             )
             screen_buffer.append("")
 
@@ -225,9 +324,9 @@ class SessionDisplayComponent:
             )
             messages_bar = self._render_wide_progress_bar(messages_percentage)
             screen_buffer.append(
-                f"📨 [value]Messages Usage:[/]       {messages_bar} {messages_percentage:4.1f}%    [value]{sent_messages}[/] / [dim]{messages_limit_p90:,}[/]"
+                f"{self._metric_prefix('📨', 'Messages Usage')}{messages_bar} {messages_percentage:4.1f}%    [value]{sent_messages}[/] / [dim]{messages_limit_p90:,}[/]"
             )
-            screen_buffer.append(f"[separator]{'─' * 60}[/]")
+            screen_buffer.append(self._separator_line())
 
             time_percentage = (
                 percentage(elapsed_session_minutes, total_session_minutes)
@@ -239,17 +338,14 @@ class SessionDisplayComponent:
             time_left_hours = int(time_remaining // 60)
             time_left_mins = int(time_remaining % 60)
             screen_buffer.append(
-                f"⏱️  [value]Time to Reset:[/]       {time_bar} {time_left_hours}h {time_left_mins}m"
+                f"{self._metric_prefix('⏱️', 'Time to Reset')}{time_bar} {time_left_hours}h {time_left_mins}m"
             )
             screen_buffer.append("")
 
-            if per_model_stats:
-                model_bar = self.model_usage.render(per_model_stats)
+            if not kwargs.get("hide_model_distribution", False):
+                model_bar = self.model_usage.render(per_model_stats or {})
                 screen_buffer.append(f"🤖 [value]Model Distribution:[/]   {model_bar}")
-            else:
-                model_bar = self.model_usage.render({})
-                screen_buffer.append(f"🤖 [value]Model Distribution:[/]   {model_bar}")
-            screen_buffer.append(f"[separator]{'─' * 60}[/]")
+            screen_buffer.append(self._separator_line())
 
             velocity_emoji = VelocityIndicator.get_velocity_emoji(burn_rate)
             screen_buffer.append(
@@ -280,11 +376,13 @@ class SessionDisplayComponent:
             screen_buffer.append("")
 
             token_bar = self.token_progress.render(usage_percentage)
-            screen_buffer.append(f"📊 [value]Token Usage:[/]    {token_bar}")
+            screen_buffer.append(
+                f"📊 [value]Token Usage:[/]    {token_bar}{limit_suffix}"
+            )
             screen_buffer.append("")
 
             screen_buffer.append(
-                f"🎯 [value]Tokens:[/]         [value]{tokens_used:,}[/] / [dim]~{token_limit:,}[/] ([info]{tokens_left:,} left[/])"
+                f"🎯 [value]Tokens:[/]         [value]{tokens_used:,}[/] / [dim]~{token_limit:,}[/] ([info]{tokens_left:,} left[/]){token_detail_suffix}"
             )
 
             velocity_emoji = VelocityIndicator.get_velocity_emoji(burn_rate)
@@ -296,7 +394,7 @@ class SessionDisplayComponent:
                 f"📨 [value]Sent Messages:[/]  [info]{sent_messages}[/] [dim]messages[/]"
             )
 
-            if per_model_stats:
+            if per_model_stats and not kwargs.get("hide_model_distribution", False):
                 model_bar = self.model_usage.render(per_model_stats)
                 screen_buffer.append(f"🤖 [value]Model Usage:[/]    {model_bar}")
 
@@ -330,6 +428,9 @@ class SessionDisplayComponent:
         screen_buffer.append(
             f"⏰ [dim]{current_time_str}[/] 📝 [success]Active session[/] | [dim]Ctrl+C to exit[/] 🟢"
         )
+
+        if kwargs.get("no_emoji", False) or ascii_fallback_enabled():
+            screen_buffer = [_EMOJI_RE.sub("", line) for line in screen_buffer]
 
         return screen_buffer
 
@@ -382,6 +483,7 @@ class SessionDisplayComponent:
         token_limit: int,
         current_time: Optional[datetime] = None,
         args: Optional[Any] = None,
+        snapshot: Optional[dict] = None,
     ) -> list[str]:
         """Format screen for no active session state.
 
@@ -391,6 +493,7 @@ class SessionDisplayComponent:
             token_limit: Token limit for the plan
             current_time: Current datetime
             args: Command line arguments
+            snapshot: Optional official-aware snapshot for limit overlays
 
         Returns:
             List of formatted screen lines
@@ -398,15 +501,36 @@ class SessionDisplayComponent:
 
         screen_buffer = []
 
-        header_manager = HeaderManager()
-        screen_buffer.extend(header_manager.create_header(plan, timezone))
+        if not (args and getattr(args, "no_header", False)):
+            header_manager = HeaderManager()
+            screen_buffer.extend(header_manager.create_header(plan, timezone))
 
-        empty_token_bar = self.token_progress.render(0.0)
+        overlay = self._snapshot_limit_overlay(snapshot)
+        usage_percentage = overlay.get("usage_percentage", 0.0)
+        display_token_limit = overlay.get("token_limit", token_limit)
+        tokens_used = overlay.get("tokens_used")
+        tokens_left = (
+            max(0, display_token_limit - tokens_used)
+            if tokens_used is not None and display_token_limit > 0
+            else None
+        )
+        limit_suffix = self._limit_confidence_suffix(
+            overlay.get("limit_confidence"), overlay.get("limit_stale", False)
+        )
+        token_detail_suffix = self._token_detail_suffix(
+            overlay.get("limit_tokens_label")
+        )
+
+        empty_token_bar = self.token_progress.render(usage_percentage)
         screen_buffer.append(f"📊 [value]Token Usage:[/]    {empty_token_bar}")
+        if limit_suffix:
+            screen_buffer[-1] = f"{screen_buffer[-1]}{limit_suffix}"
         screen_buffer.append("")
 
+        tokens_used_text = f"{tokens_used:,}" if tokens_used is not None else "--"
+        tokens_left_text = f"{tokens_left:,}" if tokens_left is not None else "--"
         screen_buffer.append(
-            f"🎯 [value]Tokens:[/]         [value]0[/] / [dim]~{token_limit:,}[/] ([info]0 left[/])"
+            f"🎯 [value]Tokens:[/]         [value]{tokens_used_text}[/] / [dim]~{display_token_limit:,}[/] ([info]{tokens_left_text} left[/]){token_detail_suffix}"
         )
         screen_buffer.append(
             "🔥 [value]Burn Rate:[/]      [warning]0.0[/] [dim]tokens/min[/]"
@@ -437,5 +561,8 @@ class SessionDisplayComponent:
             screen_buffer.append(
                 "⏰ [dim]--:--:--[/] 📝 [info]No active session[/] | [dim]Ctrl+C to exit[/] 🟨"
             )
+
+        if (args and getattr(args, "no_emoji", False)) or ascii_fallback_enabled():
+            screen_buffer = [_EMOJI_RE.sub("", line) for line in screen_buffer]
 
         return screen_buffer

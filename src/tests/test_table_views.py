@@ -202,6 +202,28 @@ class TestTableViewsController:
         # Total: 4 rows
         assert table.row_count == 4
 
+    def test_create_daily_table_supports_date_abbreviations_and_opt_in_sparklines(
+        self,
+        controller: TableViewsController,
+        sample_daily_data: List[Dict[str, Any]],
+        sample_totals: Dict[str, Any],
+    ) -> None:
+        """PR #175 formatting knobs are explicit, with sparklines disabled unless requested."""
+        table = controller.create_daily_table(
+            sample_daily_data,
+            sample_totals,
+            "UTC",
+            date_format="%d.%m.%Y",
+            abbreviate_tokens=True,
+            sparklines=True,
+        )
+
+        assert table.columns[0]._cells[0] == "01.01.2024"
+        assert table.columns[2]._cells[0] == "1k"
+        assert table.columns[6]._cells[0] == "1.6k"
+        assert table.columns[8].header == "Trend"
+        assert table.columns[8]._cells[0] == "▁"
+
     def test_create_monthly_table_structure(
         self,
         controller: TableViewsController,

@@ -91,6 +91,17 @@ class TestMonitoringOrchestratorInit:
             assert orchestrator.update_interval == 5
             mock_dm.assert_called_once_with(cache_ttl=5, data_path="/custom/path")
 
+    def test_init_with_multiple_data_paths(self) -> None:
+        """Multiple data roots are preserved for the data manager (#196)."""
+        data_paths = ["/home/projects", "/work/projects"]
+        with (
+            patch("claude_monitor.monitoring.orchestrator.DataManager") as mock_dm,
+            patch("claude_monitor.monitoring.orchestrator.SessionMonitor"),
+        ):
+            MonitoringOrchestrator(update_interval=5, data_path=data_paths)
+
+            mock_dm.assert_called_once_with(cache_ttl=5, data_path=data_paths)
+
 
 class TestMonitoringOrchestratorLifecycle:
     """Test orchestrator start/stop lifecycle."""
@@ -139,6 +150,28 @@ class TestMonitoringOrchestratorLifecycle:
         orchestrator.stop()  # Should not raise
 
         assert not orchestrator._monitoring
+
+    def test_set_args_propagates_warehouse_options(
+        self, orchestrator: MonitoringOrchestrator
+    ) -> None:
+        """CLI warehouse flags reach the live DataManager."""
+        args = type(
+            "Args",
+            (),
+            {
+                "filter_models": "anthropic",
+                "warehouse": True,
+                "warehouse_file": "/tmp/usage.json",
+                "warehouse_retention_days": 30,
+            },
+        )()
+
+        orchestrator.set_args(args)
+
+        assert orchestrator.data_manager.filter_models == "anthropic"
+        assert orchestrator.data_manager.write_warehouse is True
+        assert orchestrator.data_manager.warehouse_file == "/tmp/usage.json"
+        assert orchestrator.data_manager.warehouse_retention_days == 30
 
     def test_stop_monitoring_with_timeout(
         self, orchestrator: MonitoringOrchestrator

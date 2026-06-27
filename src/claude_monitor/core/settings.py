@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import string
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -14,6 +15,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from claude_monitor import __version__
 
 logger = logging.getLogger(__name__)
+
+_TITLE_FORMAT_KEYS = {"pct", "plan", "used", "limit", "cost", "reset"}
 
 
 class LastUsedParams:
@@ -28,6 +31,7 @@ class LastUsedParams:
         """Save current settings as last used."""
         try:
             params = {
+                "plan": settings.plan,
                 "theme": settings.theme,
                 "timezone": settings.timezone,
                 "time_format": settings.time_format,
@@ -99,14 +103,18 @@ class Settings(BaseSettings):
         cli_implicit_flags=True,
     )
 
-    plan: Literal["pro", "max5", "max20", "custom"] = Field(
+    plan: Literal["pro", "max5", "max20", "team", "custom"] = Field(
         default="custom",
-        description="Plan type (pro, max5, max20, custom)",
+        description="Plan type (pro, max5, max20, team, custom)",
     )
 
-    view: Literal["realtime", "daily", "monthly", "session"] = Field(
+    view: Literal[
+        "realtime", "daily", "monthly", "session", "entries", "sessions", "burn-rate"
+    ] = Field(
         default="realtime",
-        description="View mode (realtime, daily, monthly, session)",
+        description=(
+            "View mode (realtime, daily, monthly, session, entries, sessions, burn-rate)"
+        ),
     )
 
     @staticmethod
@@ -170,13 +178,208 @@ class Settings(BaseSettings):
 
     clear: bool = Field(default=False, description="Clear saved configuration")
 
+    hide_model_distribution: bool = Field(
+        default=False, description="Hide the model distribution bar"
+    )
+
+    header: bool = Field(
+        default=True, description="Show the header banner (--no-header to hide)"
+    )
+
+    emoji: bool = Field(
+        default=True, description="Show emoji (--no-emoji for plain output)"
+    )
+
+    once: bool = Field(
+        default=False,
+        description="Measure usage once, print a snapshot, and exit (no live loop)",
+    )
+
+    statusline: bool = Field(
+        default=False,
+        description="Run as a Claude Code statusline hook: read session JSON on "
+        "stdin, capture official rate_limits, and print a one-line status",
+    )
+
+    filter_models: Literal["all", "anthropic"] = Field(
+        default="all",
+        description="Which models to count: 'all' (default) or 'anthropic' to "
+        "exclude non-Claude models (e.g. routed via Claude Code Router)",
+    )
+
+    compact: bool = Field(
+        default=False,
+        description="Single-line compact output (works live and one-shot)",
+    )
+
+    output: Literal["rich", "json", "text", "csv"] = Field(
+        default="rich",
+        description="One-shot/report output format (rich, json, text, csv)",
+    )
+
+    write_state: bool = Field(
+        default=False,
+        description="Write the usage snapshot to a state file for external tools",
+    )
+
+    state_file: Optional[str] = Field(
+        default=None,
+        description="State file path for --write-state "
+        "(default ~/.claude-monitor/state/latest.json)",
+    )
+
+    api: bool = Field(
+        default=False,
+        description="Enable the experimental Anthropic OAuth usage API",
+    )
+
+    api_cache_file: Optional[str] = Field(
+        default=None,
+        description=(
+            "Experimental API cache file path "
+            "(default ~/.claude-monitor/api/latest.json)"
+        ),
+    )
+
+    api_ttl_seconds: int = Field(
+        default=180,
+        ge=1,
+        description="Freshness TTL for the experimental API cache in seconds",
+    )
+
+    data_paths: List[str] = Field(
+        default_factory=list,
+        description="Claude data directories to scan; repeat or comma-separate values",
+    )
+
+    warehouse: bool = Field(
+        default=False,
+        description="Persist usage entries to the opt-in local warehouse",
+    )
+
+    warehouse_file: Optional[str] = Field(
+        default=None,
+        description="Usage warehouse file path (default ~/.claude-monitor/warehouse/usage.json)",
+    )
+
+    warehouse_retention_days: int = Field(
+        default=365,
+        ge=1,
+        description="Days of usage records to retain in the warehouse",
+    )
+
+    date_format: Optional[str] = Field(
+        default=None,
+        description="Date format for daily/monthly table periods, e.g. %d.%m.%Y",
+    )
+
+    abbreviate_tokens: bool = Field(
+        default=False,
+        description="Abbreviate token counts in table views",
+    )
+
+    sparklines: bool = Field(
+        default=False,
+        description="Show opt-in sparklines in table views",
+    )
+
+    set_terminal_title: bool = Field(
+        default=False,
+        description="Set the terminal title from the usage snapshot",
+    )
+
+    title_format: str = Field(
+        default="{pct}% {plan}",
+        description=(
+            "Terminal title template using {pct}, {plan}, {used}, {limit}, "
+            "{cost}, and {reset}"
+        ),
+    )
+
+    @field_validator("output", mode="before")
+    @classmethod
+    def validate_output(cls, v: Any) -> str:
+        """Validate and normalize output format value."""
+        if isinstance(v, str):
+            v_lower = v.lower()
+            valid_outputs = ["rich", "json", "text", "csv"]
+            if v_lower in valid_outputs:
+                return v_lower
+            raise ValueError(
+                f"Invalid output: {v}. Must be one of: {', '.join(valid_outputs)}"
+            )
+        return v
+
+    @field_validator("title_format", mode="before")
+    @classmethod
+    def validate_title_format(cls, v: Any) -> str:
+        """Validate terminal title templates without inventing a DSL."""
+        if not isinstance(v, str):
+            return v
+        try:
+            parsed = list(string.Formatter().parse(v))
+        except ValueError as e:
+            raise ValueError(f"Invalid title-format template: {e}") from e
+
+        for _literal, field_name, _format_spec, _conversion in parsed:
+            if field_name is None:
+                continue
+            if field_name not in _TITLE_FORMAT_KEYS:
+                raise ValueError(f"Unknown title-format key: {field_name}")
+
+        try:
+            v.format(
+                pct=12.3,
+                plan="pro",
+                used=1200,
+                limit=1900,
+                cost=1.23,
+                reset="17:00",
+            )
+        except (IndexError, KeyError, TypeError, ValueError) as e:
+            raise ValueError(f"Invalid title-format template: {e}") from e
+        return v
+
+    @field_validator("data_paths", mode="before")
+    @classmethod
+    def validate_data_paths(cls, v: Any) -> Any:
+        """Reject blank data paths while letting pydantic parse list syntax."""
+        if v is None:
+            return v
+        if isinstance(v, str):
+            parts = [part.strip() for part in v.split(",")]
+        else:
+            parts = []
+            for item in v:
+                if isinstance(item, str):
+                    parts.extend(part.strip() for part in item.split(","))
+                else:
+                    parts.append(item)
+        if any(isinstance(part, str) and not part for part in parts):
+            raise ValueError("data-paths entries must not be blank")
+        return parts
+
+    @field_validator("filter_models", mode="before")
+    @classmethod
+    def validate_filter_models(cls, v: Any) -> str:
+        """Validate and normalize the model filter value."""
+        if isinstance(v, str):
+            v_lower = v.lower()
+            valid = ["all", "anthropic"]
+            if v_lower in valid:
+                return v_lower
+            raise ValueError(
+                f"Invalid filter-models: {v}. Must be one of: {', '.join(valid)}"
+            )
+        return v
+
     @field_validator("plan", mode="before")
     @classmethod
     def validate_plan(cls, v: Any) -> str:
         """Validate and normalize plan value."""
         if isinstance(v, str):
             v_lower = v.lower()
-            valid_plans = ["pro", "max5", "max20", "custom"]
+            valid_plans = ["pro", "max5", "max20", "team", "custom"]
             if v_lower in valid_plans:
                 return v_lower
             raise ValueError(
@@ -190,7 +393,15 @@ class Settings(BaseSettings):
         """Validate and normalize view value."""
         if isinstance(v, str):
             v_lower = v.lower()
-            valid_views = ["realtime", "daily", "monthly", "session"]
+            valid_views = [
+                "realtime",
+                "daily",
+                "monthly",
+                "session",
+                "entries",
+                "sessions",
+                "burn-rate",
+            ]
             if v_lower in valid_views:
                 return v_lower
             raise ValueError(
@@ -283,13 +494,12 @@ class Settings(BaseSettings):
             if argv:
                 for _i, arg in enumerate(argv):
                     if arg.startswith("--"):
-                        field_name = arg[2:].replace("-", "_")
+                        # Handle both "--plan pro" and "--plan=pro" forms.
+                        field_name = arg[2:].split("=", 1)[0].replace("-", "_")
                         if field_name in cls.model_fields:
                             cli_provided_fields.add(field_name)
 
             for key, value in last_params.items():
-                if key == "plan":
-                    continue
                 if not hasattr(settings, key):
                     continue
                 if key not in cli_provided_fields:
@@ -302,7 +512,7 @@ class Settings(BaseSettings):
             ):
                 settings.custom_limit_tokens = None
 
-        if settings.timezone == "auto":
+        if settings.timezone in ("auto", "local"):
             settings.timezone = cls._get_system_timezone()
         if settings.time_format == "auto":
             settings.time_format = cls._get_system_time_format()
@@ -310,9 +520,8 @@ class Settings(BaseSettings):
         if settings.debug:
             settings.log_level = "DEBUG"
 
-        if settings.theme == "auto" or (
-            "theme" not in cli_provided_fields and not clear_config
-        ):
+        theme_was_auto = settings.theme == "auto"
+        if theme_was_auto:
             from claude_monitor.terminal.themes import (
                 BackgroundDetector,
                 BackgroundType,
@@ -330,7 +539,14 @@ class Settings(BaseSettings):
 
         if not clear_config:
             last_used = LastUsedParams()
-            last_used.save(settings)
+            # Persist the user's "auto" intent (not the resolved light/dark) so
+            # background auto-detection keeps running on the next launch.
+            to_persist = (
+                settings.model_copy(update={"theme": "auto"})
+                if theme_was_auto
+                else settings
+            )
+            last_used.save(to_persist)
 
         return settings
 
@@ -350,5 +566,26 @@ class Settings(BaseSettings):
         args.log_level = self.log_level
         args.log_file = str(self.log_file) if self.log_file else None
         args.version = self.version
+        args.hide_model_distribution = self.hide_model_distribution
+        args.no_header = not self.header
+        args.no_emoji = not self.emoji
+        args.once = self.once
+        args.compact = self.compact
+        args.output = self.output
+        args.write_state = self.write_state
+        args.state_file = self.state_file
+        args.api = self.api
+        args.api_cache_file = self.api_cache_file
+        args.api_ttl_seconds = self.api_ttl_seconds
+        args.data_paths = list(self.data_paths)
+        args.warehouse = self.warehouse
+        args.warehouse_file = self.warehouse_file
+        args.warehouse_retention_days = self.warehouse_retention_days
+        args.date_format = self.date_format
+        args.abbreviate_tokens = self.abbreviate_tokens
+        args.sparklines = self.sparklines
+        args.filter_models = self.filter_models
+        args.set_terminal_title = self.set_terminal_title
+        args.title_format = self.title_format
 
         return args

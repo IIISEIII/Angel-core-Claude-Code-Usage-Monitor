@@ -16,6 +16,10 @@ class CostMode(Enum):
     CALCULATED = "calculate"
 
 
+def default_source() -> Dict[str, Any]:
+    return {"kind": "claude_code_jsonl", "account": None}
+
+
 @dataclass
 class UsageEntry:
     """Individual usage record from Claude usage data."""
@@ -29,6 +33,8 @@ class UsageEntry:
     model: str = ""
     message_id: str = ""
     request_id: str = ""
+    project: str = "unknown"
+    source: Dict[str, Any] = field(default_factory=default_source)
 
 
 @dataclass
@@ -88,6 +94,11 @@ class SessionBlock:
     limit_messages: List[Dict[str, Any]] = field(default_factory=list)
     projection_data: Optional[Dict[str, Any]] = None
     burn_rate_snapshot: Optional[BurnRate] = None
+    source: Dict[str, Any] = field(default_factory=default_source)
+    # Reset time parsed from a limit message in this block, when present. Preferred
+    # over start+5h for displaying the reset, since it is what Claude actually told
+    # the user (issues #114, #106). Does not mutate end_time / block segmentation.
+    usage_limit_reset_time: Optional[datetime] = None
 
     @property
     def total_tokens(self) -> int:
@@ -158,3 +169,23 @@ def normalize_model_name(model: str) -> str:
         return "claude-3-haiku"
 
     return model
+
+
+def is_anthropic_model(model: str) -> bool:
+    """Whether ``model`` is recognizably Anthropic/Claude (or the Claude-internal
+    ``<synthetic>`` marker).
+
+    Used by ``--filter-models anthropic`` to drop foreign models routed through
+    Claude Code Router (e.g. GPT, DeepSeek, Gemini) so they do not count toward
+    the Claude limit or cost. Matches on ``claude`` / ``anthropic`` only: every
+    real Claude model id carries one of those (direct, Bedrock ``anthropic.``,
+    or Vertex ``claude-`` forms), and matching bare family words like ``opus``
+    would wrongly admit foreign names such as ``gpt-4-opus``. Empty/unknown names
+    are treated as non-Anthropic.
+    """
+    if not model:
+        return False
+    name = model.lower()
+    if name == "<synthetic>":
+        return True
+    return "claude" in name or "anthropic" in name

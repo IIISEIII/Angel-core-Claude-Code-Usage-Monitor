@@ -52,7 +52,10 @@
          run: uv python install ${{ matrix.python-version }}
 
        - name: Install pre-commit
-         run: uv tool install pre-commit --with pre-commit-uv
+         # Plain virtualenv backend: pre-commit-uv's uv-created envs fail
+         # pre-commit's health check on patch versions (e.g. "expected 3.9,
+         # actual 3.9.25"), which has nothing to do with the hooks themselves.
+         run: uv tool install pre-commit
 
        - name: Run pre-commit
          run: |
