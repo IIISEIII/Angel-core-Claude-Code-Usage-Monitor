@@ -66,11 +66,26 @@ def test_official_drives_status_code_not_local() -> None:
     assert snap["status"]["label"] == "near_limit"
 
 
-def test_official_stale_flags_snapshot_but_still_used() -> None:
-    snap = build_snapshot(_data(), _args(), token_limit=19000,
-                          official=_official(stale=True))
+def test_stale_official_falls_back_to_local_not_official_truth() -> None:
+    """A stale capture must NOT drive status/confidence as current truth (invariant 4)."""
+    snap = build_snapshot(_data(used=12000), _args(), token_limit=19000,
+                          official=_official(five_pct=96.0, stale=True))
+    five = snap["limits"]["five_hour"]
+    # Falls back to the local estimate; still flagged stale for transparency.
+    assert five["confidence"] == "local_estimate"
+    assert snap["confidence"] == "local_estimate"
     assert snap["stale"] is True
+    # Status is driven by the local ~63%, not the stale official 96% -> ok, not near.
+    assert snap["status"]["code"] == 0
+
+
+def test_official_drives_status_without_local_active_block() -> None:
+    """Official 98% must drive the exit status even with no local active block (#contract)."""
+    snap = build_snapshot(_data(active=False), _args(), token_limit=19000,
+                          official=_official(five_pct=98.0))
     assert snap["limits"]["five_hour"]["confidence"] == "official"
+    assert snap["status"]["code"] == 10
+    assert snap["status"]["label"] == "near_limit"
 
 
 def test_leaked_official_percentage_falls_back_to_local() -> None:

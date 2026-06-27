@@ -128,6 +128,23 @@ def test_corrupt_json_returns_none(tmp_path: Path) -> None:
     assert read_official_limits(f, now_epoch=1100) is None
 
 
+def test_non_finite_values_do_not_crash(tmp_path: Path) -> None:
+    """JSON permits Infinity/NaN; they must not crash the reader or render as truth."""
+    f = tmp_path / "latest.json"
+    # Written by hand because these are the literals json.loads accepts.
+    f.write_text(
+        '{"captured_at_epoch": NaN, "rate_limits": {'
+        '"five_hour": {"used_percentage": NaN, "resets_at": Infinity},'
+        '"seven_day": {"used_percentage": 20.0, "resets_at": 9000}}}'
+    )
+    out = read_official_limits(f, now_epoch=1100)
+    assert out is not None
+    assert out["five_hour"]["used_percentage"] is None  # NaN dropped
+    assert out["five_hour"]["resets_at_epoch"] is None  # Infinity dropped
+    assert out["seven_day"]["used_percentage"] == 20.0  # finite window survives
+    assert out["captured_at_epoch"] is None  # NaN dropped, no crash
+
+
 # --- writer (the --statusline hook) ------------------------------------------
 
 

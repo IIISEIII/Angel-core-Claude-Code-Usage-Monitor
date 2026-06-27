@@ -22,6 +22,14 @@ def test_format_json_roundtrips() -> None:
     assert json.loads(format_json(_SNAP)) == _SNAP
 
 
+def test_format_json_rejects_non_finite() -> None:
+    """A stray NaN/Infinity must raise, never emit invalid JSON for consumers."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        format_json({"x": float("nan")})
+
+
 def test_format_json_indent_and_unicode() -> None:
     out = format_json({"k": "zażółć"})
     assert "\n  " in out  # indent=2

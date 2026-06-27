@@ -7,8 +7,12 @@ from typing import Any, List
 
 
 def format_json(snapshot: dict) -> str:
-    """Pretty, stable JSON (indent=2, unicode preserved)."""
-    return json.dumps(snapshot, indent=2, ensure_ascii=False)
+    """Pretty, stable JSON (indent=2, unicode preserved).
+
+    ``allow_nan=False`` so a stray non-finite value raises here rather than
+    emitting ``NaN``/``Infinity`` literals that are invalid JSON for consumers.
+    """
+    return json.dumps(snapshot, indent=2, ensure_ascii=False, allow_nan=False)
 
 
 def _abbrev(n: float) -> str:

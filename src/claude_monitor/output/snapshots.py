@@ -67,11 +67,12 @@ def _epoch(iso: Optional[str]) -> Optional[int]:
 
 
 def _status(active: Optional[dict], used_pct: Optional[float]) -> tuple[int, str]:
-    if active is None:
-        return 20, "no_active_session"
+    # A known utilization (e.g. an official limit) drives the status even with no
+    # local active block; only when utilization is unknown does the lack of a
+    # local session make the result indeterminate.
     if used_pct is None:
-        return 20, "indeterminate"  # active, but utilization unknown (no limit)
-    if active.get("limitMessages") or used_pct >= 100.0:
+        return 20, "no_active_session" if active is None else "indeterminate"
+    if (active and active.get("limitMessages")) or used_pct >= 100.0:
         return 11, "limit_hit"
     if used_pct >= Plans.LIMIT_DETECTION_THRESHOLD * 100:
         return 10, "near_limit"
@@ -257,8 +258,10 @@ def build_snapshot(
     headline_confidence = _LOCAL
     snapshot_stale = False
     status_pct = raw_pct
-    if official:
-        snapshot_stale = bool(official.get("stale"))
+    # A stale capture (older than the freshness TTL) must NOT drive status/display
+    # as current truth — treat it like an expired window and fall back to the local
+    # estimate, keeping the stale flag only as a transparency signal.
+    if official and not official.get("stale"):
         off_five = official.get("five_hour") or {}
         if off_five.get("used_percentage") is not None:
             five_hour = _official_block(off_five)
@@ -271,6 +274,8 @@ def build_snapshot(
             # official windows drive the exit status.
             seven_pct = off_seven["used_percentage"]
             status_pct = seven_pct if status_pct is None else max(status_pct, seven_pct)
+    elif official:
+        snapshot_stale = True
 
     code, label = _status(active, status_pct)
 

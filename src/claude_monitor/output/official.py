@@ -15,11 +15,25 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _finite_int(value: Any) -> Optional[int]:
+    """Coerce a finite real epoch to int, else None.
+
+    JSON permits ``NaN``/``Infinity`` (Python's ``json`` accepts them by default),
+    which would crash ``int()`` or poison comparisons; reject them and bools.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value):
+        return None
+    return int(value)
 
 # How long an official capture stays "fresh". Claude Code refreshes the
 # statusline frequently while a session is active; if our capture is older than
@@ -41,6 +55,8 @@ def _clean_pct(value: Any) -> Optional[float]:
     """
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         return None
+    if not math.isfinite(value):  # JSON NaN/Infinity must never render as a percent
+        return None
     if value < 0:
         return None
     if value > 100:
@@ -51,8 +67,7 @@ def _clean_pct(value: Any) -> Optional[float]:
 def _window(raw: Any, now_epoch: Optional[int]) -> Optional[Dict[str, Any]]:
     if not isinstance(raw, dict):
         return None
-    resets_at = raw.get("resets_at")
-    epoch = int(resets_at) if isinstance(resets_at, (int, float)) else None
+    epoch = _finite_int(raw.get("resets_at"))
     pct = _clean_pct(raw.get("used_percentage"))
     # If the reset time has passed, the window has rolled over: the captured
     # percentage is for an expired window and no longer reflects the live limit.
@@ -81,8 +96,7 @@ def read_official_limits(
     if not isinstance(rate_limits, dict):
         return None
 
-    captured = payload.get("captured_at_epoch")
-    captured = int(captured) if isinstance(captured, (int, float)) else None
+    captured = _finite_int(payload.get("captured_at_epoch"))
     stale = (
         now_epoch is not None
         and captured is not None
