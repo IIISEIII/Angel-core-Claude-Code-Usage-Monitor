@@ -272,7 +272,11 @@ def _run_once(args: argparse.Namespace) -> int:
         console = get_themed_console(
             force_theme=args.theme.lower() if getattr(args, "theme", None) else None
         )
-        console.print(DisplayController().create_data_display(data, args, token_limit))
+        console.print(
+            DisplayController().create_data_display(
+                data, args, token_limit, snapshot=snapshot
+            )
+        )
 
     if not _maybe_write_state(args, snapshot):
         print("Failed to write state file (see logs)", file=sys.stderr)
@@ -494,39 +498,30 @@ def _run_monitoring(args: argparse.Namespace) -> None:
                     token_limit_now = _effective_token_limit(
                         args, reported_limit if reported_limit else token_limit
                     )
-                    snapshot = None
-                    if (
-                        getattr(args, "compact", False)
-                        or getattr(args, "write_state", False)
-                        or getattr(args, "set_terminal_title", False)
-                    ):
-                        now_epoch = int(time.time())
-                        official = read_official_limits(now_epoch=now_epoch)
-                        api_limits = _read_optional_api_limits(
-                            args, official, now_epoch
-                        )
-                        snapshot = build_snapshot(
-                            data,
-                            args,
-                            token_limit_now,
-                            official=official,
-                            api_limits=api_limits,
-                        )
+                    now_epoch = int(time.time())
+                    official = read_official_limits(now_epoch=now_epoch)
+                    api_limits = _read_optional_api_limits(args, official, now_epoch)
+                    snapshot = build_snapshot(
+                        data,
+                        args,
+                        token_limit_now,
+                        official=official,
+                        api_limits=api_limits,
+                    )
 
-                    if snapshot is not None:
-                        _maybe_set_terminal_title(args, snapshot)
+                    _maybe_set_terminal_title(args, snapshot)
 
                     if getattr(args, "compact", False):
                         renderable = format_compact(snapshot)
                     else:
                         renderable = display_controller.create_data_display(
-                            data, args, token_limit_now
+                            data, args, token_limit_now, snapshot=snapshot
                         )
 
                     if live_display:
                         live_display.update(renderable)
 
-                    if snapshot is not None and getattr(args, "write_state", False):
+                    if getattr(args, "write_state", False):
                         _maybe_write_state(args, snapshot)
 
                 except Exception as e:

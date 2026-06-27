@@ -4,6 +4,7 @@ Orchestrates UI components and coordinates display updates.
 """
 
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -215,7 +216,11 @@ class DisplayController:
         }
 
     def create_data_display(
-        self, data: Dict[str, Any], args: Any, token_limit: int
+        self,
+        data: Dict[str, Any],
+        args: Any,
+        token_limit: int,
+        snapshot: Optional[dict] = None,
     ) -> RenderableType:
         """Create display renderable from data.
 
@@ -223,6 +228,7 @@ class DisplayController:
             data: Usage data dictionary
             args: Command line arguments
             token_limit: Current token limit
+            snapshot: Optional official-aware snapshot for limit overlays
 
         Returns:
             Rich renderable for display
@@ -245,7 +251,7 @@ class DisplayController:
 
         if not active_block:
             screen_buffer = self.session_display.format_no_active_session_screen(
-                args.plan, args.timezone, token_limit, current_time, args
+                args.plan, args.timezone, token_limit, current_time, args, snapshot
             )
             return self.buffer_manager.create_screen_renderable(screen_buffer)
 
@@ -271,7 +277,13 @@ class DisplayController:
         # Process active session data with cost limit
         try:
             processed_data = self._process_active_session_data(
-                active_block, data, args, token_limit, current_time, cost_limit_p90
+                active_block,
+                data,
+                args,
+                token_limit,
+                current_time,
+                cost_limit_p90,
+                snapshot=snapshot,
             )
         except Exception as e:
             # Log the error and show error screen
@@ -334,6 +346,7 @@ class DisplayController:
         token_limit: int,
         current_time: datetime,
         cost_limit_p90: Optional[float] = None,
+        snapshot: Optional[dict] = None,
     ) -> Dict[str, Any]:
         """Process active session data for display.
 
@@ -344,6 +357,7 @@ class DisplayController:
             token_limit: Current token limit
             current_time: Current UTC time
             cost_limit_p90: Optional cost limit
+            snapshot: Optional official-aware snapshot for limit overlays
 
         Returns:
             Processed data dictionary for display
@@ -393,7 +407,7 @@ class DisplayController:
         )
 
         # Build result dictionary
-        return {
+        result = {
             "plan": args.plan,
             "timezone": args.timezone,
             "tokens_used": tokens_used,
@@ -416,6 +430,50 @@ class DisplayController:
             "show_tokens_will_run_out": notifications["show_cost_will_exceed"],
             "original_limit": original_limit,
         }
+        self._apply_snapshot_limit_overlay(result, snapshot)
+        return result
+
+    @staticmethod
+    def _finite_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    def _apply_snapshot_limit_overlay(
+        self, processed_data: Dict[str, Any], snapshot: Optional[dict]
+    ) -> None:
+        """Overlay official/experimental five-hour limit data onto rich TUI fields."""
+        if not snapshot:
+            return
+
+        five_hour = (snapshot.get("limits") or {}).get("five_hour") or {}
+        pct = self._finite_float(five_hour.get("used_percentage"))
+        if pct is None:
+            return
+
+        confidence = five_hour.get("confidence") or "unknown"
+        processed_data["usage_percentage"] = pct
+        processed_data["limit_confidence"] = confidence
+        processed_data["limit_stale"] = bool(snapshot.get("stale")) and confidence in {
+            "official",
+            "experimental",
+        }
+
+        tokens_used = self._finite_float(five_hour.get("tokens_used"))
+        token_limit = self._finite_float(five_hour.get("token_limit"))
+        if tokens_used is not None:
+            processed_data["tokens_used"] = int(tokens_used)
+        if token_limit is not None and token_limit > 0:
+            processed_data["token_limit"] = int(token_limit)
+
+        if tokens_used is not None and token_limit is not None and token_limit > 0:
+            processed_data["tokens_left"] = max(0, int(token_limit - tokens_used))
+        elif confidence != "local_estimate":
+            processed_data["limit_tokens_label"] = "local estimate"
 
     def _calculate_model_distribution(
         self, raw_per_model_stats: Dict[str, Any]

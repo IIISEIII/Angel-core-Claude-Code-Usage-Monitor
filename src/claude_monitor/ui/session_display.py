@@ -3,6 +3,7 @@
 Handles formatting of active session screens and session data display.
 """
 
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -120,6 +121,63 @@ class SessionDisplayComponent:
         return pad_to_display_width(f"{icon} [value]{label}:[/]", self.WIDE_BAR_COLUMN)
 
     @staticmethod
+    def _limit_confidence_suffix(confidence: Optional[str], stale: bool = False) -> str:
+        labels = {
+            "official": "official",
+            "experimental": "experimental",
+            "local_estimate": "local estimate",
+            "unknown": "unknown",
+        }
+        label = labels.get(confidence or "")
+        if not label:
+            return ""
+        if stale:
+            label = f"{label}, stale"
+        return f" [dim]({label})[/]"
+
+    @staticmethod
+    def _token_detail_suffix(label: Optional[str]) -> str:
+        if not label:
+            return ""
+        return f" [dim]({label})[/]"
+
+    @staticmethod
+    def _finite_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    def _snapshot_limit_overlay(self, snapshot: Optional[dict]) -> dict[str, Any]:
+        if not snapshot:
+            return {}
+
+        five_hour = (snapshot.get("limits") or {}).get("five_hour") or {}
+        pct = self._finite_float(five_hour.get("used_percentage"))
+        if pct is None:
+            return {}
+
+        confidence = five_hour.get("confidence") or "unknown"
+        tokens_used = self._finite_float(five_hour.get("tokens_used"))
+        token_limit = self._finite_float(five_hour.get("token_limit"))
+        overlay: dict[str, Any] = {
+            "usage_percentage": pct,
+            "limit_confidence": confidence,
+            "limit_stale": bool(snapshot.get("stale"))
+            and confidence in {"official", "experimental"},
+        }
+        if tokens_used is not None:
+            overlay["tokens_used"] = int(tokens_used)
+        if token_limit is not None and token_limit > 0:
+            overlay["token_limit"] = int(token_limit)
+        if tokens_used is None and confidence != "local_estimate":
+            overlay["limit_tokens_label"] = "local estimate unavailable"
+        return overlay
+
+    @staticmethod
     def _separator_line(width: int = 60) -> str:
         char = "-" if ascii_fallback_enabled() else "─"
         return f"[separator]{char * width}[/]"
@@ -211,6 +269,12 @@ class SessionDisplayComponent:
         """
 
         screen_buffer = []
+        limit_suffix = self._limit_confidence_suffix(
+            kwargs.get("limit_confidence"), kwargs.get("limit_stale", False)
+        )
+        token_detail_suffix = self._token_detail_suffix(
+            kwargs.get("limit_tokens_label")
+        )
 
         if not kwargs.get("no_header", False):
             header_manager = HeaderManager()
@@ -249,7 +313,7 @@ class SessionDisplayComponent:
 
             token_bar = self._render_wide_progress_bar(usage_percentage)
             screen_buffer.append(
-                f"{self._metric_prefix('📊', 'Token Usage')}{token_bar} {usage_percentage:4.1f}%    [value]{tokens_used:,}[/] / [dim]{token_limit:,}[/]"
+                f"{self._metric_prefix('📊', 'Token Usage')}{token_bar} {usage_percentage:4.1f}%{limit_suffix}    [value]{tokens_used:,}[/] / [dim]{token_limit:,}[/]{token_detail_suffix}"
             )
             screen_buffer.append("")
 
@@ -312,11 +376,13 @@ class SessionDisplayComponent:
             screen_buffer.append("")
 
             token_bar = self.token_progress.render(usage_percentage)
-            screen_buffer.append(f"📊 [value]Token Usage:[/]    {token_bar}")
+            screen_buffer.append(
+                f"📊 [value]Token Usage:[/]    {token_bar}{limit_suffix}"
+            )
             screen_buffer.append("")
 
             screen_buffer.append(
-                f"🎯 [value]Tokens:[/]         [value]{tokens_used:,}[/] / [dim]~{token_limit:,}[/] ([info]{tokens_left:,} left[/])"
+                f"🎯 [value]Tokens:[/]         [value]{tokens_used:,}[/] / [dim]~{token_limit:,}[/] ([info]{tokens_left:,} left[/]){token_detail_suffix}"
             )
 
             velocity_emoji = VelocityIndicator.get_velocity_emoji(burn_rate)
@@ -417,6 +483,7 @@ class SessionDisplayComponent:
         token_limit: int,
         current_time: Optional[datetime] = None,
         args: Optional[Any] = None,
+        snapshot: Optional[dict] = None,
     ) -> list[str]:
         """Format screen for no active session state.
 
@@ -426,6 +493,7 @@ class SessionDisplayComponent:
             token_limit: Token limit for the plan
             current_time: Current datetime
             args: Command line arguments
+            snapshot: Optional official-aware snapshot for limit overlays
 
         Returns:
             List of formatted screen lines
@@ -437,12 +505,32 @@ class SessionDisplayComponent:
             header_manager = HeaderManager()
             screen_buffer.extend(header_manager.create_header(plan, timezone))
 
-        empty_token_bar = self.token_progress.render(0.0)
+        overlay = self._snapshot_limit_overlay(snapshot)
+        usage_percentage = overlay.get("usage_percentage", 0.0)
+        display_token_limit = overlay.get("token_limit", token_limit)
+        tokens_used = overlay.get("tokens_used")
+        tokens_left = (
+            max(0, display_token_limit - tokens_used)
+            if tokens_used is not None and display_token_limit > 0
+            else None
+        )
+        limit_suffix = self._limit_confidence_suffix(
+            overlay.get("limit_confidence"), overlay.get("limit_stale", False)
+        )
+        token_detail_suffix = self._token_detail_suffix(
+            overlay.get("limit_tokens_label")
+        )
+
+        empty_token_bar = self.token_progress.render(usage_percentage)
         screen_buffer.append(f"📊 [value]Token Usage:[/]    {empty_token_bar}")
+        if limit_suffix:
+            screen_buffer[-1] = f"{screen_buffer[-1]}{limit_suffix}"
         screen_buffer.append("")
 
+        tokens_used_text = f"{tokens_used:,}" if tokens_used is not None else "--"
+        tokens_left_text = f"{tokens_left:,}" if tokens_left is not None else "--"
         screen_buffer.append(
-            f"🎯 [value]Tokens:[/]         [value]0[/] / [dim]~{token_limit:,}[/] ([info]0 left[/])"
+            f"🎯 [value]Tokens:[/]         [value]{tokens_used_text}[/] / [dim]~{display_token_limit:,}[/] ([info]{tokens_left_text} left[/]){token_detail_suffix}"
         )
         screen_buffer.append(
             "🔥 [value]Burn Rate:[/]      [warning]0.0[/] [dim]tokens/min[/]"
