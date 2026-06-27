@@ -35,6 +35,7 @@ def _finite_int(value: Any) -> Optional[int]:
         return None
     return int(value)
 
+
 # How long an official capture stays "fresh". Claude Code refreshes the
 # statusline frequently while a session is active; if our capture is older than
 # this the official numbers may lag, so we flag the snapshot stale.

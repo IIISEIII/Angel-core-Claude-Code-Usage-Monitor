@@ -17,7 +17,9 @@ def _screen_kwargs(**overrides: Any) -> dict[str, Any]:
         "total_session_minutes": 300.0,
         "burn_rate": 1.0,
         "session_cost": 0.5,
-        "per_model_stats": {"claude-sonnet-4-5": {"input_tokens": 50, "output_tokens": 50}},
+        "per_model_stats": {
+            "claude-sonnet-4-5": {"input_tokens": 50, "output_tokens": 50}
+        },
         "sent_messages": 3,
         "entries": [],
         "predicted_end_str": "13:00",

@@ -116,7 +116,10 @@ def test_once_force_refresh_none_exit_30(capsys: pytest.CaptureFixture) -> None:
 def test_once_honors_custom_limit_tokens(capsys: pytest.CaptureFixture) -> None:
     """--plan custom --custom-limit-tokens N is used, not the P90 estimate (codex P1)."""
     args = argparse.Namespace(
-        output="json", plan="custom", refresh_rate=10, theme="dark",
+        output="json",
+        plan="custom",
+        refresh_rate=10,
+        theme="dark",
         custom_limit_tokens=50000,
     )
     _run(args, _payload())  # payload token_limit is 19000; custom override wins
@@ -130,8 +133,12 @@ def test_once_write_state_writes_file(
     """--write-state writes the snapshot to the state file in one-shot mode (#184)."""
     state = tmp_path / "state" / "latest.json"
     args = argparse.Namespace(
-        output="json", plan="pro", refresh_rate=10, theme="dark",
-        write_state=True, state_file=str(state),
+        output="json",
+        plan="pro",
+        refresh_rate=10,
+        theme="dark",
+        write_state=True,
+        state_file=str(state),
     )
     _run(args, _payload())
     capsys.readouterr()

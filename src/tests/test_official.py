@@ -169,7 +169,10 @@ def test_capture_round_trips_through_reader(tmp_path: Path) -> None:
 def test_capture_no_rate_limits_tombstones(tmp_path: Path) -> None:
     """No rate_limits -> write a tombstone (not nothing) so old official data clears."""
     f = tmp_path / "statusline" / "latest.json"
-    assert capture_statusline({"model": {"display_name": "x"}}, path=f, now_epoch=1) is None
+    assert (
+        capture_statusline({"model": {"display_name": "x"}}, path=f, now_epoch=1)
+        is None
+    )
     assert f.exists()
     assert read_official_limits(f, now_epoch=2) is None
 
@@ -178,7 +181,11 @@ def test_tombstone_clears_prior_official(tmp_path: Path) -> None:
     """A plan downgrade (rate_limits disappears) must not keep serving stale official."""
     f = tmp_path / "statusline" / "latest.json"
     capture_statusline(
-        {"rate_limits": {"five_hour": {"used_percentage": 99.0, "resets_at": 9999999999}}},
+        {
+            "rate_limits": {
+                "five_hour": {"used_percentage": 99.0, "resets_at": 9999999999}
+            }
+        },
         path=f,
         now_epoch=1,
     )
