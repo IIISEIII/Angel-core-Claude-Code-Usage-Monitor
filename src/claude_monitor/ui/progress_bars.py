@@ -8,6 +8,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Final, Protocol, TypedDict
 
+from claude_monitor.utils.display_width import ascii_fallback_enabled
 from claude_monitor.utils.time_utils import percentage
 
 
@@ -56,6 +57,8 @@ class BaseProgressBar(ABC):
     # Default styling constants
     DEFAULT_FILLED_CHAR: Final[str] = "█"
     DEFAULT_EMPTY_CHAR: Final[str] = "░"
+    ASCII_FILLED_CHAR: Final[str] = "#"
+    ASCII_EMPTY_CHAR: Final[str] = "-"
     DEFAULT_MAX_PERCENTAGE: Final[float] = 100.0
 
     def __init__(self, width: int = 50) -> None:
@@ -113,6 +116,10 @@ class BaseProgressBar(ABC):
         Returns:
             Formatted bar string
         """
+        if ascii_fallback_enabled():
+            filled_char = self.ASCII_FILLED_CHAR
+            empty_char = self.ASCII_EMPTY_CHAR
+
         filled_bar: str = filled_char * filled
         empty_bar: str = empty_char * (self.width - filled)
 
@@ -210,8 +217,10 @@ class TokenProgressBar(BaseProgressBar):
             else self.MEDIUM_USAGE_STYLE,
         )
 
-        if percentage >= self.HIGH_USAGE_THRESHOLD:
-            icon: str = self.HIGH_USAGE_ICON
+        if ascii_fallback_enabled():
+            icon = "!"
+        elif percentage >= self.HIGH_USAGE_THRESHOLD:
+            icon = self.HIGH_USAGE_ICON
         elif percentage >= self.MEDIUM_USAGE_THRESHOLD:
             icon = self.MEDIUM_USAGE_ICON
         else:
@@ -247,7 +256,8 @@ class TimeProgressBar(BaseProgressBar):
         )
 
         remaining_time = format_time(max(0, total_minutes - elapsed_minutes))
-        return f"⏰ [{bar}] {remaining_time}"
+        icon = "time" if ascii_fallback_enabled() else "⏰"
+        return f"{icon} [{bar}] {remaining_time}"
 
 
 class ModelUsageBar(BaseProgressBar):
@@ -284,7 +294,8 @@ class ModelUsageBar(BaseProgressBar):
         """
         if not per_model_stats:
             empty_bar = self._render_bar(0, empty_style="table.border")
-            return f"🤖 [{empty_bar}] No model data"
+            icon = "model" if ascii_fallback_enabled() else "🤖"
+            return f"{icon} [{empty_bar}] No model data"
 
         family_tokens: dict[str, int] = {}
         for model_name, stats in per_model_stats.items():
@@ -295,7 +306,8 @@ class ModelUsageBar(BaseProgressBar):
         total_tokens = sum(family_tokens.values())
         if total_tokens == 0:
             empty_bar = self._render_bar(0, empty_style="table.border")
-            return f"🤖 [{empty_bar}] No tokens used"
+            icon = "model" if ascii_fallback_enabled() else "🤖"
+            return f"{icon} [{empty_bar}] No tokens used"
 
         # Families with usage, in canonical display order.
         families = [f for f in self._FAMILY_STYLES if family_tokens.get(f)]
@@ -307,8 +319,9 @@ class ModelUsageBar(BaseProgressBar):
         for f in order[: self.width - sum(filled.values())]:
             filled[f] += 1
 
+        filled_char = self.ASCII_FILLED_CHAR if ascii_fallback_enabled() else "█"
         segments = [
-            f"[{self._FAMILY_STYLES[f]}]{'█' * filled[f]}[/]"
+            f"[{self._FAMILY_STYLES[f]}]{filled_char * filled[f]}[/]"
             for f in families
             if filled[f] > 0
         ]
@@ -316,4 +329,5 @@ class ModelUsageBar(BaseProgressBar):
             f"{f} {percentage(family_tokens[f], total_tokens):.1f}%" for f in families
         )
 
-        return f"🤖 [{''.join(segments)}] {summary}"
+        icon = "model" if ascii_fallback_enabled() else "🤖"
+        return f"{icon} [{''.join(segments)}] {summary}"

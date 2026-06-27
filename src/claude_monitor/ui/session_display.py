@@ -17,6 +17,10 @@ from claude_monitor.ui.progress_bars import (
     TimeProgressBar,
     TokenProgressBar,
 )
+from claude_monitor.utils.display_width import (
+    ascii_fallback_enabled,
+    pad_to_display_width,
+)
 from claude_monitor.utils.time_utils import (
     format_display_time,
     get_time_format_preference,
@@ -67,6 +71,8 @@ class SessionDisplayData:
 class SessionDisplayComponent:
     """Main component for displaying active session information."""
 
+    WIDE_BAR_COLUMN: int = 25
+
     def __init__(self):
         """Initialize session display component with sub-components."""
         self.token_progress = TokenProgressBar()
@@ -104,7 +110,19 @@ class SessionDisplayComponent:
                 filled, filled_style=bar_style, empty_style="table.border"
             )
 
+        if ascii_fallback_enabled():
+            color = "!"
+
         return f"{color} [{filled_bar}]"
+
+    def _metric_prefix(self, icon: str, label: str) -> str:
+        """Return a Rich prefix padded by terminal display cells."""
+        return pad_to_display_width(f"{icon} [value]{label}:[/]", self.WIDE_BAR_COLUMN)
+
+    @staticmethod
+    def _separator_line(width: int = 60) -> str:
+        char = "-" if ascii_fallback_enabled() else "─"
+        return f"[separator]{char * width}[/]"
 
     def format_active_session_screen_v2(self, data: SessionDisplayData) -> list[str]:
         """Format complete active session screen using data class.
@@ -210,7 +228,7 @@ class SessionDisplayComponent:
                 screen_buffer.append(
                     "[dim]Based on your historical usage patterns when hitting limits (P90)[/dim]"
                 )
-                screen_buffer.append(f"[separator]{'─' * 60}[/]")
+                screen_buffer.append(self._separator_line())
             else:
                 screen_buffer.append("")
 
@@ -221,13 +239,13 @@ class SessionDisplayComponent:
             )
             cost_bar = self._render_wide_progress_bar(cost_percentage)
             screen_buffer.append(
-                f"💰 [value]Cost Usage:[/]           {cost_bar} {cost_percentage:4.1f}%    [value]${session_cost:.2f}[/] / [dim]${cost_limit_p90:.2f}[/]"
+                f"{self._metric_prefix('💰', 'Cost Usage')}{cost_bar} {cost_percentage:4.1f}%    [value]${session_cost:.2f}[/] / [dim]${cost_limit_p90:.2f}[/]"
             )
             screen_buffer.append("")
 
             token_bar = self._render_wide_progress_bar(usage_percentage)
             screen_buffer.append(
-                f"📊 [value]Token Usage:[/]          {token_bar} {usage_percentage:4.1f}%    [value]{tokens_used:,}[/] / [dim]{token_limit:,}[/]"
+                f"{self._metric_prefix('📊', 'Token Usage')}{token_bar} {usage_percentage:4.1f}%    [value]{tokens_used:,}[/] / [dim]{token_limit:,}[/]"
             )
             screen_buffer.append("")
 
@@ -238,9 +256,9 @@ class SessionDisplayComponent:
             )
             messages_bar = self._render_wide_progress_bar(messages_percentage)
             screen_buffer.append(
-                f"📨 [value]Messages Usage:[/]       {messages_bar} {messages_percentage:4.1f}%    [value]{sent_messages}[/] / [dim]{messages_limit_p90:,}[/]"
+                f"{self._metric_prefix('📨', 'Messages Usage')}{messages_bar} {messages_percentage:4.1f}%    [value]{sent_messages}[/] / [dim]{messages_limit_p90:,}[/]"
             )
-            screen_buffer.append(f"[separator]{'─' * 60}[/]")
+            screen_buffer.append(self._separator_line())
 
             time_percentage = (
                 percentage(elapsed_session_minutes, total_session_minutes)
@@ -252,14 +270,14 @@ class SessionDisplayComponent:
             time_left_hours = int(time_remaining // 60)
             time_left_mins = int(time_remaining % 60)
             screen_buffer.append(
-                f"⏱️  [value]Time to Reset:[/]       {time_bar} {time_left_hours}h {time_left_mins}m"
+                f"{self._metric_prefix('⏱️', 'Time to Reset')}{time_bar} {time_left_hours}h {time_left_mins}m"
             )
             screen_buffer.append("")
 
             if not kwargs.get("hide_model_distribution", False):
                 model_bar = self.model_usage.render(per_model_stats or {})
                 screen_buffer.append(f"🤖 [value]Model Distribution:[/]   {model_bar}")
-            screen_buffer.append(f"[separator]{'─' * 60}[/]")
+            screen_buffer.append(self._separator_line())
 
             velocity_emoji = VelocityIndicator.get_velocity_emoji(burn_rate)
             screen_buffer.append(
@@ -341,7 +359,7 @@ class SessionDisplayComponent:
             f"⏰ [dim]{current_time_str}[/] 📝 [success]Active session[/] | [dim]Ctrl+C to exit[/] 🟢"
         )
 
-        if kwargs.get("no_emoji", False):
+        if kwargs.get("no_emoji", False) or ascii_fallback_enabled():
             screen_buffer = [_EMOJI_RE.sub("", line) for line in screen_buffer]
 
         return screen_buffer
@@ -452,7 +470,7 @@ class SessionDisplayComponent:
                 "⏰ [dim]--:--:--[/] 📝 [info]No active session[/] | [dim]Ctrl+C to exit[/] 🟨"
             )
 
-        if args and getattr(args, "no_emoji", False):
+        if (args and getattr(args, "no_emoji", False)) or ascii_fallback_enabled():
             screen_buffer = [_EMOJI_RE.sub("", line) for line in screen_buffer]
 
         return screen_buffer

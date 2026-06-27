@@ -74,3 +74,37 @@ def test_no_active_screen_respects_no_header_and_no_emoji() -> None:
     assert not any(
         "CLAUDE" in line.upper() and "MONITOR" in line.upper() for line in lines
     )
+
+
+def test_time_to_reset_bar_aligns_with_other_wide_bars(monkeypatch) -> None:
+    """Emoji width must not shift the Time to Reset bar left or right (#144)."""
+    from claude_monitor.utils.display_width import display_width, strip_rich_markup
+
+    monkeypatch.delenv("CLAUDE_MONITOR_ASCII", raising=False)
+
+    lines = SessionDisplayComponent().format_active_session_screen(
+        **_screen_kwargs(), no_header=True
+    )
+
+    prefixes = []
+    for label in ("Cost Usage", "Token Usage", "Messages Usage", "Time to Reset"):
+        line = next(line for line in lines if label in line)
+        prefix = strip_rich_markup(line).split("🟢 [", 1)[0]
+        prefixes.append(display_width(prefix))
+
+    assert prefixes == [25, 25, 25, 25]
+
+
+def test_ascii_fallback_active_screen_uses_ascii_glyphs(monkeypatch) -> None:
+    """Fallback mode pairs with --no-emoji and avoids box/progress glyphs (#160)."""
+    from claude_monitor.utils.display_width import strip_rich_markup
+
+    monkeypatch.setenv("CLAUDE_MONITOR_ASCII", "1")
+
+    lines = SessionDisplayComponent().format_active_session_screen(
+        **_screen_kwargs(), no_header=True
+    )
+    plain = "\n".join(strip_rich_markup(line) for line in lines)
+
+    assert all(ord(ch) < 128 for ch in plain)
+    assert "#" in plain and "-" in plain

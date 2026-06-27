@@ -1,6 +1,6 @@
-"""Tests for ModelUsageBar — every model family must be visible (issues #124, #164)."""
+"""Tests for progress bars and display-width handling."""
 
-from claude_monitor.ui.progress_bars import ModelUsageBar
+from claude_monitor.ui.progress_bars import ModelUsageBar, TokenProgressBar
 
 
 def _tokens(n: int) -> dict[str, int]:
@@ -45,3 +45,37 @@ def test_render_unknown_family_shown_as_other_not_dropped() -> None:
     )
     assert "Sonnet" in out and "50.0%" in out
     assert "Other" in out
+
+
+def test_display_width_counts_clock_emoji_as_two_columns() -> None:
+    """Clock emoji are two terminal cells even when Python len() sees one codepoint."""
+    from claude_monitor.utils.display_width import display_width
+
+    assert display_width("⏰") == 2
+    assert display_width("⏱️") == 2
+    assert len("⏰") == 1
+
+
+def test_pad_to_display_width_uses_terminal_cells_not_codepoints() -> None:
+    """Padding must align by terminal display width, not Python string length."""
+    from claude_monitor.utils.display_width import display_width, pad_to_display_width
+
+    padded = pad_to_display_width("⏱️  Time to Reset:", 25)
+
+    assert display_width(padded) == 25
+    assert padded.endswith(" " * 7)
+
+
+def test_ascii_fallback_progress_bar_uses_plain_characters(
+    monkeypatch,
+) -> None:
+    """ASCII fallback avoids emoji and block glyphs on non-UTF-8 consoles (#160)."""
+    from claude_monitor.utils.display_width import strip_rich_markup
+
+    monkeypatch.setenv("CLAUDE_MONITOR_ASCII", "1")
+
+    out = TokenProgressBar(width=10).render(10)
+    plain = strip_rich_markup(out)
+
+    assert "#" in plain and "-" in plain
+    assert all(ord(ch) < 128 for ch in plain)

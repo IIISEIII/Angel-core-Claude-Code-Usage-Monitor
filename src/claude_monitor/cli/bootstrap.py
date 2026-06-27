@@ -2,10 +2,11 @@
 
 import logging
 import os
+import platform
 import sys
 from logging import Handler
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from claude_monitor.utils.time_utils import TimezoneHandler
 
@@ -38,11 +39,34 @@ def setup_logging(
     )
 
 
+def _is_utf8_encoding(encoding: Optional[str]) -> bool:
+    if not encoding:
+        return False
+    return encoding.replace("_", "-").lower() in {"utf-8", "utf8"}
+
+
+def _configure_utf8_stream(stream: Any) -> bool:
+    if _is_utf8_encoding(getattr(stream, "encoding", None)):
+        return True
+    if hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            return False
+    return _is_utf8_encoding(getattr(stream, "encoding", None))
+
+
 def setup_environment() -> None:
     """Initialize environment variables and system settings."""
-    if sys.stdout.encoding != "utf-8":
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8:replace")
+
+    streams_configured = [
+        _configure_utf8_stream(sys.stdout),
+        _configure_utf8_stream(sys.stderr),
+    ]
+
+    if platform.system() == "Windows" and not all(streams_configured):
+        os.environ.setdefault("CLAUDE_MONITOR_ASCII", "1")
 
     os.environ.setdefault(
         "CLAUDE_MONITOR_CONFIG", str(Path.home() / ".claude-monitor" / "config.yaml")
