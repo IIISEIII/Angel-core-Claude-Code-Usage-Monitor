@@ -411,8 +411,9 @@ class SessionDisplayComponent:
 
         screen_buffer = []
 
-        header_manager = HeaderManager()
-        screen_buffer.extend(header_manager.create_header(plan, timezone))
+        if not (args and getattr(args, "no_header", False)):
+            header_manager = HeaderManager()
+            screen_buffer.extend(header_manager.create_header(plan, timezone))
 
         empty_token_bar = self.token_progress.render(0.0)
         screen_buffer.append(f"📊 [value]Token Usage:[/]    {empty_token_bar}")
@@ -450,5 +451,8 @@ class SessionDisplayComponent:
             screen_buffer.append(
                 "⏰ [dim]--:--:--[/] 📝 [info]No active session[/] | [dim]Ctrl+C to exit[/] 🟨"
             )
+
+        if args and getattr(args, "no_emoji", False):
+            screen_buffer = [_EMOJI_RE.sub("", line) for line in screen_buffer]
 
         return screen_buffer

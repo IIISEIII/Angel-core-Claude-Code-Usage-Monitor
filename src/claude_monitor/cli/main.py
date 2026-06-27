@@ -111,10 +111,16 @@ def _no_data_diagnostic(searched_paths: List[str]) -> str:
     )
 
 
-def _maybe_write_state(args: argparse.Namespace, snapshot: dict) -> None:
-    """Write the snapshot to the state file if --write-state is set (issue #184)."""
+def _maybe_write_state(args: argparse.Namespace, snapshot: dict) -> bool:
+    """Write the snapshot to the state file if --write-state is set (issue #184).
+
+    Returns True on success (or when not requested); False if the write failed.
+    The live loop ignores the result (a transient write error must not break
+    monitoring); one-shot mode surfaces it so a requested write isn't silently
+    dropped.
+    """
     if not getattr(args, "write_state", False):
-        return
+        return True
     try:
         path = (
             Path(args.state_file)
@@ -122,8 +128,10 @@ def _maybe_write_state(args: argparse.Namespace, snapshot: dict) -> None:
             else default_state_path()
         )
         write_state_file(snapshot, path)
-    except Exception as e:  # never let a state-file error break monitoring
+        return True
+    except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to write state file: {e}")
+        return False
 
 
 def _effective_token_limit(args: argparse.Namespace, base_limit: int) -> int:
@@ -194,7 +202,9 @@ def _run_once(args: argparse.Namespace) -> int:
         )
         console.print(DisplayController().create_data_display(data, args, token_limit))
 
-    _maybe_write_state(args, snapshot)
+    if not _maybe_write_state(args, snapshot):
+        print("Failed to write state file (see logs)", file=sys.stderr)
+        return 30
     return snapshot["status"]["code"]
 
 
@@ -367,8 +377,11 @@ def _run_monitoring(args: argparse.Namespace) -> None:
                             total_tokens: int = active_blocks[0].get("totalTokens", 0)
                             logger.debug(f"Active block tokens: {total_tokens}")
 
+                    # `.get(key, default)` returns None if the key is present but
+                    # None, so fall back explicitly to the last known good limit.
+                    reported_limit = monitoring_data.get("token_limit")
                     token_limit_now = _effective_token_limit(
-                        args, monitoring_data.get("token_limit", token_limit)
+                        args, reported_limit if reported_limit else token_limit
                     )
                     snapshot = None
                     if getattr(args, "compact", False) or getattr(

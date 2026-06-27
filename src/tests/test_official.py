@@ -108,6 +108,27 @@ def test_window_past_reset_drops_percentage(tmp_path: Path) -> None:
     assert after["five_hour"]["resets_at_epoch"] == 5000
 
 
+def test_window_expires_exactly_at_reset(tmp_path: Path) -> None:
+    """At the reset instant (now == resets_at) the window has already rolled over."""
+    f = tmp_path / "latest.json"
+    _write(
+        f,
+        {
+            "captured_at_epoch": 1000,
+            "rate_limits": {"five_hour": {"used_percentage": 50.0, "resets_at": 5000}},
+        },
+    )
+    out = read_official_limits(f, now_epoch=5000)
+    assert out["five_hour"]["used_percentage"] is None
+
+
+def test_capture_non_dict_stdin_is_safe(tmp_path: Path) -> None:
+    """A bare JSON array/scalar on stdin must not crash the hook."""
+    f = tmp_path / "statusline" / "latest.json"
+    assert capture_statusline([], path=f, now_epoch=1) is None  # type: ignore[arg-type]
+    assert read_official_limits(f, now_epoch=2) is None
+
+
 def test_only_one_window_present(tmp_path: Path) -> None:
     f = tmp_path / "latest.json"
     _write(

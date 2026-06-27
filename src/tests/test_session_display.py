@@ -57,3 +57,20 @@ def test_no_emoji_strips_emoji_from_output() -> None:
     joined = "".join(lines)
     for ch in ("💰", "📊", "🤖", "🔥", "💲", "🎯", "📨", "⏰", "🟢"):
         assert ch not in joined
+
+
+def test_no_active_screen_respects_no_header_and_no_emoji() -> None:
+    """The no-active-session screen honors --no-header / --no-emoji too (#57)."""
+    import argparse
+
+    comp = SessionDisplayComponent()
+    args = argparse.Namespace(timezone="UTC", no_header=True, no_emoji=True)
+    lines = comp.format_no_active_session_screen(
+        plan="pro", timezone="UTC", token_limit=1000, current_time=None, args=args
+    )
+    joined = "".join(lines)
+    for ch in ("📊", "🎯", "🔥", "💲", "📨", "⏰", "🟨"):
+        assert ch not in joined
+    assert not any(
+        "CLAUDE" in line.upper() and "MONITOR" in line.upper() for line in lines
+    )

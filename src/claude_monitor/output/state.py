@@ -24,6 +24,7 @@ def write_state_file(snapshot: dict, path: Path) -> None:
     """Write ``snapshot`` to ``path`` atomically (temp file + replace)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    # pid-unique temp so concurrent writers don't clobber each other's temp file.
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_text(format_json(snapshot), encoding="utf-8")
     os.replace(tmp, path)

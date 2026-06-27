@@ -55,6 +55,15 @@ def format_text(snapshot: dict) -> str:
     """Flat, greppable ``dotted.key=value`` lines with no Rich markup."""
     lines: List[str] = []
 
+    def scalar(value: Any) -> str:
+        if value is None:
+            return "null"
+        # Keep one record per line: escape control chars so a value containing a
+        # newline can't split into a second, malformed key=value line.
+        return (
+            str(value).replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
+        )
+
     def walk(prefix: str, value: Any) -> None:
         if isinstance(value, dict):
             for key, val in value.items():
@@ -63,7 +72,7 @@ def format_text(snapshot: dict) -> str:
             for i, val in enumerate(value):
                 walk(f"{prefix}[{i}]", val)
         else:
-            lines.append(f"{prefix}={'null' if value is None else value}")
+            lines.append(f"{prefix}={scalar(value)}")
 
     walk("", snapshot)
     return "\n".join(lines)

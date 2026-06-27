@@ -159,6 +159,13 @@ def test_local_reset_falls_back_to_block_end_without_limit() -> None:
     assert snap["limits"]["five_hour"]["resets_at"] == "2026-06-27T17:00:00+00:00"
 
 
+def test_no_active_five_hour_tokens_used_is_null() -> None:
+    """No active session: token usage is unknown (null), not a misleading 0."""
+    snap = build_snapshot({"blocks": []}, _args(), token_limit=19000)
+    assert snap["limits"]["five_hour"]["tokens_used"] is None
+    assert snap["limits"]["five_hour"]["used_percentage"] is None
+
+
 def test_local_history_total_is_cache_inclusive() -> None:
     """local_history.total_tokens must include cache tokens (matches local.tokens)."""
     data = {

@@ -70,9 +70,9 @@ def _window(raw: Any, now_epoch: Optional[int]) -> Optional[Dict[str, Any]]:
         return None
     epoch = _finite_int(raw.get("resets_at"))
     pct = _clean_pct(raw.get("used_percentage"))
-    # If the reset time has passed, the window has rolled over: the captured
+    # At or past the reset time the window has rolled over: the captured
     # percentage is for an expired window and no longer reflects the live limit.
-    if epoch is not None and now_epoch is not None and now_epoch > epoch:
+    if epoch is not None and now_epoch is not None and now_epoch >= epoch:
         pct = None
     return {"used_percentage": pct, "resets_at_epoch": epoch}
 
@@ -127,6 +127,8 @@ def capture_statusline(
     official data instead of serving it forever. Writes atomically (pid-unique
     temp + ``os.replace``) so a concurrent reader never sees a half-written file.
     """
+    if not isinstance(stdin_payload, dict):  # stdin may be any JSON value
+        stdin_payload = {}
     rate_limits = stdin_payload.get("rate_limits")
     has_official = isinstance(rate_limits, dict) and bool(rate_limits)
     capture = {

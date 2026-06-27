@@ -62,11 +62,18 @@ class _FakeOrch:
         pass
 
 
-def _run(args: argparse.Namespace, payload: Optional[dict], paths=(Path("/x"),)):
+def _run(
+    args: argparse.Namespace,
+    payload: Optional[dict],
+    paths=(Path("/x"),),
+    official=None,
+):
     _FakeOrch.payload = payload
     with (
         patch.object(cli_main, "discover_claude_data_paths", return_value=list(paths)),
         patch.object(cli_main, "MonitoringOrchestrator", _FakeOrch),
+        # Isolate from the real ~/.claude-monitor capture file on the test host.
+        patch.object(cli_main, "read_official_limits", return_value=official),
     ):
         return cli_main._run_once(args)
 
@@ -145,6 +152,25 @@ def test_once_write_state_writes_file(
     assert json.loads(state.read_text())["schema_version"] == "1.0"
 
 
+def test_once_write_state_failure_exits_30(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """A requested --write-state that fails is surfaced (exit 30), not swallowed."""
+    args = argparse.Namespace(
+        output="json",
+        plan="pro",
+        refresh_rate=10,
+        theme="dark",
+        write_state=True,
+        state_file=str(tmp_path / "x.json"),
+    )
+    with patch.object(cli_main, "write_state_file", side_effect=OSError("disk full")):
+        rc = _run(args, _payload())
+    err = capsys.readouterr().err
+    assert rc == 30
+    assert "state file" in err.lower()
+
+
 def test_once_consumes_official_limits(capsys: pytest.CaptureFixture) -> None:
     """When official statusline limits exist, the snapshot uses them (trust keystone)."""
     official = {
@@ -153,8 +179,7 @@ def test_once_consumes_official_limits(capsys: pytest.CaptureFixture) -> None:
         "captured_at_epoch": 1782570000,
         "stale": False,
     }
-    with patch.object(cli_main, "read_official_limits", return_value=official):
-        _run(_args("json"), _payload())
+    _run(_args("json"), _payload(), official=official)
     doc = json.loads(capsys.readouterr().out)
     assert doc["limits"]["five_hour"]["confidence"] == "official"
     assert doc["limits"]["five_hour"]["used_percentage"] == 88.0

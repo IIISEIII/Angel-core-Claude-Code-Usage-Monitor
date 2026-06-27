@@ -46,6 +46,14 @@ def test_format_text_greppable_key_value_lines() -> None:
     assert "resets_at=None" not in out
 
 
+def test_format_text_escapes_newlines_in_values() -> None:
+    """A value with a newline must not split into a second, malformed line."""
+    out = format_text({"source": {"data_paths": ["/a\nrogue=value"]}})
+    assert "/a\\nrogue=value" in out
+    # Every emitted line is a single key=value record (no bare continuation line).
+    assert all("=" in line for line in out.splitlines())
+
+
 def test_format_text_no_rich_markup() -> None:
     out = format_text(_SNAP)
     assert "[" not in out.replace("[0]", "").replace("[1]", "")  # no [value] markup

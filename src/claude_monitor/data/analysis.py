@@ -85,10 +85,12 @@ def analyze_usage(
             if in_block:
                 block.limit_messages = [_format_limit_info(li) for li in in_block]
                 # Prefer an explicit reset time from the limit message over the
-                # start+5h estimate; use the most recent one in the block.
-                resets = [li["reset_time"] for li in in_block if li.get("reset_time")]
-                if resets:
-                    block.usage_limit_reset_time = max(resets)
+                # start+5h estimate; take the reset from the most recent limit
+                # message (latest timestamp), not the largest reset value.
+                with_reset = [li for li in in_block if li.get("reset_time")]
+                if with_reset:
+                    newest = max(with_reset, key=lambda li: li["timestamp"])
+                    block.usage_limit_reset_time = newest["reset_time"]
 
     metadata: Dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

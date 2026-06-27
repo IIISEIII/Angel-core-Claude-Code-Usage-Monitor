@@ -230,7 +230,7 @@ def build_snapshot(
         }
         five_hour = {
             "used_percentage": None,
-            "tokens_used": 0,
+            "tokens_used": None,  # no active session: utilization is unknown, not 0
             "token_limit": token_limit if has_limit else None,
             "resets_at": None,
             "resets_at_epoch": None,
