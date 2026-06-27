@@ -513,6 +513,24 @@ class TestSettings:
 
     @patch("claude_monitor.core.settings.Settings._get_system_timezone")
     @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    def test_load_with_last_used_local_timezone_alias(
+        self, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """`--timezone local` resolves before display code validates the timezone."""
+        mock_timezone.return_value = "Australia/Brisbane"
+        mock_time_format.return_value = "24h"
+
+        with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+            mock_instance = Mock()
+            mock_instance.load.return_value = {}
+            MockLastUsed.return_value = mock_instance
+
+            settings = Settings.load_with_last_used(["--timezone", "local"])
+
+            assert settings.timezone == "Australia/Brisbane"
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
     def test_load_with_last_used_debug_flag(
         self, mock_time_format: Mock, mock_timezone: Mock
     ) -> None:

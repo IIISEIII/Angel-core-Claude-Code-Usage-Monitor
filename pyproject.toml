@@ -46,6 +46,7 @@ dependencies = [
   "rich>=13.7.0",
   "tomli>=1.2.0; python_version < '3.11'",
   "tzdata; sys_platform == 'win32'",
+  "tzlocal>=5.0; sys_platform == 'win32'",
   "wcwidth>=0.2.13"
 ]
 

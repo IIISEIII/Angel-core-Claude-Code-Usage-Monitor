@@ -600,6 +600,23 @@ class TestDisplayControllerEdgeCases:
 
         assert result["predicted_end_str"] == "Today 14:00 (estimated)"
 
+    def test_format_display_times_keeps_istanbul_reset_offset(
+        self, controller, sample_args
+    ):
+        """Istanbul reset display should not drift by an extra hour (#121)."""
+        sample_args.timezone = "Europe/Istanbul"
+        sample_args.time_format = "24h"
+
+        current_time = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+        predicted_end = datetime(2026, 1, 15, 14, 0, tzinfo=timezone.utc)
+        reset_time = datetime(2026, 1, 15, 15, 0, tzinfo=timezone.utc)
+
+        result = controller._format_display_times(
+            sample_args, current_time, predicted_end, reset_time
+        )
+
+        assert result["reset_time_str"] == "18:00"
+
     def test_calculate_model_distribution_invalid_stats(self, controller):
         """Test model distribution with invalid stats format."""
         invalid_stats = {

@@ -512,7 +512,7 @@ class Settings(BaseSettings):
             ):
                 settings.custom_limit_tokens = None
 
-        if settings.timezone == "auto":
+        if settings.timezone in ("auto", "local"):
             settings.timezone = cls._get_system_timezone()
         if settings.time_format == "auto":
             settings.time_format = cls._get_system_time_format()

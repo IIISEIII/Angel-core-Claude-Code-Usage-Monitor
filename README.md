@@ -560,6 +560,7 @@ numpy>=1.21.0               # Statistical calculations
 sentry-sdk>=1.40.0          # Error reporting (optional)
 pyyaml>=6.0                 # Configuration files
 tzdata                      # Windows timezone data
+tzlocal>=5.0                # Windows local timezone to IANA resolver
 ```
 
 #### Python Requirements
