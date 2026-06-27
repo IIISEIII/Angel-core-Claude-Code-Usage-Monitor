@@ -762,6 +762,18 @@ class TestSettings:
     def test_output_lowercases_value(self) -> None:
         assert Settings(output="JSON", _cli_parse_args=[]).output == "json"
 
+    def test_write_state_defaults_and_namespace(self) -> None:
+        """--write-state defaults off, --state-file default None; both reach the namespace (#184)."""
+        default = Settings(_cli_parse_args=[])
+        assert default.write_state is False
+        assert default.state_file is None
+
+        namespace = Settings(
+            write_state=True, state_file="/tmp/s.json", _cli_parse_args=[]
+        ).to_namespace()
+        assert namespace.write_state is True
+        assert namespace.state_file == "/tmp/s.json"
+
 
 class TestSettingsIntegration:
     """Integration tests for Settings class."""

@@ -122,3 +122,17 @@ def test_once_honors_custom_limit_tokens(capsys: pytest.CaptureFixture) -> None:
     _run(args, _payload())  # payload token_limit is 19000; custom override wins
     doc = json.loads(capsys.readouterr().out)
     assert doc["limits"]["five_hour"]["token_limit"] == 50000
+
+
+def test_once_write_state_writes_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """--write-state writes the snapshot to the state file in one-shot mode (#184)."""
+    state = tmp_path / "state" / "latest.json"
+    args = argparse.Namespace(
+        output="json", plan="pro", refresh_rate=10, theme="dark",
+        write_state=True, state_file=str(state),
+    )
+    _run(args, _payload())
+    capsys.readouterr()
+    assert json.loads(state.read_text())["schema_version"] == "1.0"

@@ -193,6 +193,17 @@ class Settings(BaseSettings):
         description="One-shot output format (rich, json, text)",
     )
 
+    write_state: bool = Field(
+        default=False,
+        description="Write the usage snapshot to a state file for external tools",
+    )
+
+    state_file: Optional[str] = Field(
+        default=None,
+        description="State file path for --write-state "
+        "(default ~/.claude-monitor/state/latest.json)",
+    )
+
     @field_validator("output", mode="before")
     @classmethod
     def validate_output(cls, v: Any) -> str:
@@ -397,5 +408,7 @@ class Settings(BaseSettings):
         args.no_emoji = not self.emoji
         args.once = self.once
         args.output = self.output
+        args.write_state = self.write_state
+        args.state_file = self.state_file
 
         return args

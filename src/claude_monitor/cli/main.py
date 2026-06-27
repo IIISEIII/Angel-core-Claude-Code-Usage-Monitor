@@ -27,6 +27,7 @@ from claude_monitor.data.analysis import analyze_usage
 from claude_monitor.error_handling import report_error
 from claude_monitor.monitoring.orchestrator import MonitoringOrchestrator
 from claude_monitor.output import build_snapshot, format_json, format_text
+from claude_monitor.output.state import default_state_path, write_state_file
 from claude_monitor.terminal.manager import (
     enter_alternate_screen,
     handle_cleanup_and_exit,
@@ -99,6 +100,21 @@ def _no_data_diagnostic(searched_paths: List[str]) -> str:
     )
 
 
+def _maybe_write_state(args: argparse.Namespace, snapshot: dict) -> None:
+    """Write the snapshot to the state file if --write-state is set (issue #184)."""
+    if not getattr(args, "write_state", False):
+        return
+    try:
+        path = (
+            Path(args.state_file)
+            if getattr(args, "state_file", None)
+            else default_state_path()
+        )
+        write_state_file(snapshot, path)
+    except Exception as e:  # never let a state-file error break monitoring
+        logging.getLogger(__name__).warning(f"Failed to write state file: {e}")
+
+
 def _run_once(args: argparse.Namespace) -> int:
     """One-shot mode: pull usage once, print a snapshot, and exit (issue #126).
 
@@ -152,6 +168,7 @@ def _run_once(args: argparse.Namespace) -> int:
         )
         console.print(DisplayController().create_data_display(data, args, token_limit))
 
+    _maybe_write_state(args, snapshot)
     return snapshot["status"]["code"]
 
 
@@ -293,6 +310,16 @@ def _run_monitoring(args: argparse.Namespace) -> None:
 
                     if live_display:
                         live_display.update(renderable)
+
+                    if getattr(args, "write_state", False):
+                        _maybe_write_state(
+                            args,
+                            build_snapshot(
+                                data,
+                                args,
+                                monitoring_data.get("token_limit", token_limit),
+                            ),
+                        )
 
                 except Exception as e:
                     logger.error(f"Display update error: {e}", exc_info=True)
