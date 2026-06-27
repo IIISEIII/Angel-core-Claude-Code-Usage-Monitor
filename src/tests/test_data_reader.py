@@ -1570,17 +1570,13 @@ class TestDataProcessors:
 
         processor = TimestampProcessor()
 
-        with patch.object(processor.timezone_handler, "ensure_timezone") as mock_ensure:
-            mock_dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-            mock_ensure.return_value = mock_dt
-
-            # Test integer timestamp
-            result = processor.parse_timestamp(1704110400)  # 2024-01-01 12:00:00 UTC
-            assert result == mock_dt
-
-            # Test float timestamp
-            result = processor.parse_timestamp(1704110400.5)
-            assert result == mock_dt
+        # Numeric epochs are absolute instants -> parsed directly as UTC.
+        assert processor.parse_timestamp(1704110400) == datetime(
+            2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc
+        )
+        assert processor.parse_timestamp(1704110400.5) == datetime(
+            2024, 1, 1, 12, 0, 0, 500000, tzinfo=timezone.utc
+        )
 
     def test_timestamp_processor_parse_invalid(self):
         """Test parsing invalid timestamps."""

@@ -75,13 +75,18 @@ def analyze_usage(
         limits_detected = len(limit_detections)
 
         for block in blocks:
-            block_limits = [
-                _format_limit_info(limit_info)
+            in_block = [
+                limit_info
                 for limit_info in limit_detections
                 if _is_limit_in_block_timerange(limit_info, block)
             ]
-            if block_limits:
-                block.limit_messages = block_limits
+            if in_block:
+                block.limit_messages = [_format_limit_info(li) for li in in_block]
+                # Prefer an explicit reset time from the limit message over the
+                # start+5h estimate; use the most recent one in the block.
+                resets = [li["reset_time"] for li in in_block if li.get("reset_time")]
+                if resets:
+                    block.usage_limit_reset_time = max(resets)
 
     metadata: Dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -198,6 +203,11 @@ def _create_base_block_dict(block: SessionBlock) -> Dict[str, Any]:
         "perModelStats": block.per_model_stats,
         "sentMessagesCount": block.sent_messages_count,
         "durationMinutes": block.duration_minutes,
+        "usageLimitResetTime": (
+            block.usage_limit_reset_time.isoformat()
+            if block.usage_limit_reset_time
+            else None
+        ),
         "entries": _format_block_entries(block.entries),
         "entries_count": len(block.entries),
     }

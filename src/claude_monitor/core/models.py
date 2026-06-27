@@ -88,6 +88,10 @@ class SessionBlock:
     limit_messages: List[Dict[str, Any]] = field(default_factory=list)
     projection_data: Optional[Dict[str, Any]] = None
     burn_rate_snapshot: Optional[BurnRate] = None
+    # Reset time parsed from a limit message in this block, when present. Preferred
+    # over start+5h for displaying the reset, since it is what Claude actually told
+    # the user (issues #114, #106). Does not mutate end_time / block segmentation.
+    usage_limit_reset_time: Optional[datetime] = None
 
     @property
     def total_tokens(self) -> int:

@@ -4,7 +4,7 @@ This module provides unified data processing functionality to eliminate
 code duplication across different components.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 
 from claude_monitor.utils.time_utils import TimezoneHandler
@@ -53,8 +53,10 @@ class TimestampProcessor:
                         continue
 
             if isinstance(timestamp_value, (int, float)):
-                dt = datetime.fromtimestamp(timestamp_value)
-                return self.timezone_handler.ensure_timezone(dt)
+                # An epoch is an absolute instant; interpret it as UTC rather than
+                # the host's local wall time (which ensure_timezone would then
+                # mislabel as UTC, shifting the reset by the host offset).
+                return datetime.fromtimestamp(timestamp_value, tz=timezone.utc)
 
         except Exception:
             pass

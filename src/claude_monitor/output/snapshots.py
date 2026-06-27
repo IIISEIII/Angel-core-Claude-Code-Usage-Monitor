@@ -162,12 +162,15 @@ def build_snapshot(
             "burn_rate_cost_per_hour": burn.get("costPerHour"),
             "model_distribution": _model_distribution(active.get("perModelStats")),
         }
+        # Prefer a reset time parsed from a limit message (what Claude actually
+        # told the user) over the start+5h estimate (#114, #106).
+        local_reset = active.get("usageLimitResetTime") or active.get("endTime")
         five_hour = {
             "used_percentage": used_pct,
             "tokens_used": used,
             "token_limit": token_limit if has_limit else None,
-            "resets_at": active.get("endTime"),
-            "resets_at_epoch": _epoch(active.get("endTime")),
+            "resets_at": local_reset,
+            "resets_at_epoch": _epoch(local_reset),
             "source": {"kind": _KIND},
             "confidence": _LOCAL,
         }

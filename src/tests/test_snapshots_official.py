@@ -106,6 +106,21 @@ def test_official_seven_day_exhaustion_drives_status() -> None:
     assert snap["status"]["code"] == 11
 
 
+def test_local_reset_prefers_limit_message_over_block_end() -> None:
+    """A parsed limit reset time wins over start+5h for the local reset (#114, #106)."""
+    data = _data(used=1000)
+    data["blocks"][0]["usageLimitResetTime"] = "2026-06-27T19:30:00+00:00"
+    snap = build_snapshot(data, _args(), token_limit=19000)
+    five = snap["limits"]["five_hour"]
+    assert five["resets_at"] == "2026-06-27T19:30:00+00:00"  # not the 17:00 endTime
+    assert five["confidence"] == "local_estimate"
+
+
+def test_local_reset_falls_back_to_block_end_without_limit() -> None:
+    snap = build_snapshot(_data(used=1000), _args(), token_limit=19000)
+    assert snap["limits"]["five_hour"]["resets_at"] == "2026-06-27T17:00:00+00:00"
+
+
 def test_no_official_keeps_local_behaviour() -> None:
     snap = build_snapshot(_data(used=12000), _args(), token_limit=19000)
     assert snap["limits"]["five_hour"]["confidence"] == "local_estimate"
