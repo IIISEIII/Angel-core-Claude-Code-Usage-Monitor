@@ -235,6 +235,34 @@ class TestPricingCalculator:
                 model="unknown-model", input_tokens=1000, output_tokens=500, strict=True
             )
 
+    def test_non_anthropic_model_not_priced_as_claude(
+        self, calculator: PricingCalculator
+    ) -> None:
+        """A non-Claude model (e.g. routed via Claude Code Router) must not be billed
+        at a fabricated Claude rate (#217, #199)."""
+        # 1M input tokens at the Sonnet rate would be $3.00; it must be $0 (unpriced).
+        assert (
+            calculator.calculate_cost(
+                model="gpt-4o", input_tokens=1_000_000, output_tokens=0
+            )
+            == 0.0
+        )
+        assert (
+            calculator.calculate_cost(
+                model="deepseek-chat", input_tokens=1_000_000, output_tokens=0
+            )
+            == 0.0
+        )
+
+    def test_unrecognized_claude_model_still_uses_family_fallback(
+        self, calculator: PricingCalculator
+    ) -> None:
+        """An unknown but clearly-Claude model still gets a Claude family rate."""
+        cost = calculator.calculate_cost(
+            model="claude-experimental-xyz", input_tokens=1_000_000, output_tokens=0
+        )
+        assert cost > 0.0
+
     def test_calculate_cost_zero_tokens(self, calculator: PricingCalculator) -> None:
         """Test cost calculation with zero tokens."""
         cost = calculator.calculate_cost(

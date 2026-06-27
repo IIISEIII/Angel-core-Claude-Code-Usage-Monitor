@@ -55,6 +55,15 @@ class PricingCalculator:
         },
     }
 
+    # A non-Anthropic model (e.g. routed through Claude Code Router) has no Claude
+    # rate; price it as unknown ($0) rather than fabricating a Claude one (#217, #199).
+    UNKNOWN_PRICING: Dict[str, float] = {
+        "input": 0.0,
+        "output": 0.0,
+        "cache_creation": 0.0,
+        "cache_read": 0.0,
+    }
+
     # Versions priced differently from the current family rate.
     LEGACY_PRICING: Dict[str, Dict[str, float]] = {
         # Opus 3 / 4.0 / 4.1 were $15/$75 before Opus 4.5 dropped to $5/$25
@@ -242,8 +251,10 @@ class PricingCalculator:
             return self.FALLBACK_PRICING["opus"]
         if "haiku" in model_lower:
             return self.FALLBACK_PRICING["haiku"]
-        # Default to Sonnet pricing
-        return self.FALLBACK_PRICING["sonnet"]
+        if "claude" in model_lower or "sonnet" in model_lower:
+            return self.FALLBACK_PRICING["sonnet"]
+        # Not a recognizable Anthropic model: don't fabricate a Claude rate.
+        return self.UNKNOWN_PRICING
 
     def calculate_cost_for_entry(
         self, entry_data: Dict[str, Any], mode: CostMode
