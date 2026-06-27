@@ -1,6 +1,7 @@
 """Tests for data/analysis.py module."""
 
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from claude_monitor.core.models import (
@@ -73,6 +74,80 @@ class TestAnalyzeUsage:
         mock_load.assert_called_once()
         mock_analyzer.transform_to_blocks.assert_called_once_with([sample_entry])
         mock_analyzer.detect_limits.assert_called_once_with([{"raw": "data"}])
+
+    @patch("claude_monitor.data.analysis.UsageWarehouse")
+    @patch("claude_monitor.data.analysis.load_usage_entries")
+    @patch("claude_monitor.data.analysis.SessionAnalyzer")
+    @patch("claude_monitor.data.analysis.BurnRateCalculator")
+    def test_analyze_usage_writes_warehouse_only_when_opted_in(
+        self,
+        mock_calc_class: Mock,
+        mock_analyzer_class: Mock,
+        mock_load: Mock,
+        mock_warehouse_class: Mock,
+        tmp_path: Path,
+    ) -> None:
+        """The persistent warehouse stays off by default but writes loaded entries when requested."""
+        sample_entry = UsageEntry(
+            timestamp=datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc),
+            input_tokens=100,
+            output_tokens=50,
+            cost_usd=0.001,
+            model="claude-3-haiku",
+            project="/workspace/app",
+        )
+        sample_block = SessionBlock(
+            id="block_1",
+            start_time=datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc),
+            end_time=datetime(2024, 1, 1, 17, 0, tzinfo=timezone.utc),
+            token_counts=TokenCounts(input_tokens=100, output_tokens=50),
+            cost_usd=0.001,
+            entries=[sample_entry],
+        )
+
+        mock_load.return_value = ([sample_entry], [])
+        mock_analyzer = Mock()
+        mock_analyzer.transform_to_blocks.return_value = [sample_block]
+        mock_analyzer.detect_limits.return_value = []
+        mock_analyzer_class.return_value = mock_analyzer
+        mock_calc_class.return_value = Mock()
+
+        warehouse_path = tmp_path / "usage.json"
+        analyze_usage(
+            hours_back=24,
+            use_cache=False,
+            write_warehouse=True,
+            warehouse_file=warehouse_path,
+            warehouse_retention_days=30,
+        )
+
+        mock_warehouse_class.assert_called_once_with(warehouse_path, retention_days=30)
+        mock_warehouse_class.return_value.upsert_entries.assert_called_once_with(
+            [sample_entry]
+        )
+
+    @patch("claude_monitor.data.analysis.UsageWarehouse")
+    @patch("claude_monitor.data.analysis.load_usage_entries")
+    @patch("claude_monitor.data.analysis.SessionAnalyzer")
+    @patch("claude_monitor.data.analysis.BurnRateCalculator")
+    def test_analyze_usage_does_not_touch_warehouse_by_default(
+        self,
+        mock_calc_class: Mock,
+        mock_analyzer_class: Mock,
+        mock_load: Mock,
+        mock_warehouse_class: Mock,
+    ) -> None:
+        """Warehouse persistence is default-off."""
+        mock_load.return_value = ([], [])
+        mock_analyzer = Mock()
+        mock_analyzer.transform_to_blocks.return_value = []
+        mock_analyzer.detect_limits.return_value = []
+        mock_analyzer_class.return_value = mock_analyzer
+        mock_calc_class.return_value = Mock()
+
+        analyze_usage(hours_back=24, use_cache=False)
+
+        mock_warehouse_class.assert_not_called()
 
     @patch("claude_monitor.data.analysis.load_usage_entries")
     @patch("claude_monitor.data.analysis.SessionAnalyzer")
@@ -471,6 +546,7 @@ class TestBlockConversion:
             "model": "claude-3-haiku",
             "messageId": "msg_1",
             "requestId": "req_1",
+            "project": "unknown",
             "source": {"kind": "claude_code_jsonl", "account": "/home"},
         }
 

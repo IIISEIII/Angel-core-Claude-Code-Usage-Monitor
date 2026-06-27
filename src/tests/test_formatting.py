@@ -6,8 +6,10 @@ from unittest.mock import Mock, patch
 from claude_monitor.utils.formatting import (
     format_currency,
     format_display_time,
+    format_number_abbreviated,
     format_time,
     get_time_format_preference,
+    render_sparkline,
 )
 from claude_monitor.utils.model_utils import (
     get_model_display_name,
@@ -190,6 +192,19 @@ class TestFormatDisplayTime:
 
 class TestFormattingAdvanced:
     """Advanced test cases for formatting utilities."""
+
+    def test_format_number_abbreviated_keeps_meaningful_precision(self) -> None:
+        """Abbreviated token counts remain readable without losing small values."""
+        assert format_number_abbreviated(999) == "999"
+        assert format_number_abbreviated(1000) == "1k"
+        assert format_number_abbreviated(1250) == "1.2k"
+        assert format_number_abbreviated(1_250_000) == "1.2M"
+        assert format_number_abbreviated(-1500) == "-1.5k"
+
+    def test_render_sparkline_is_explicitly_available_for_opt_in_views(self) -> None:
+        assert render_sparkline([]) == ""
+        assert render_sparkline([5]) == "▁"
+        assert render_sparkline([0, 5, 10]) == "▁▄█"
 
     def test_format_currency_extensive_edge_cases(self) -> None:
         """Test format_currency with extensive edge cases."""

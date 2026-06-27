@@ -151,6 +151,28 @@ class TestMonitoringOrchestratorLifecycle:
 
         assert not orchestrator._monitoring
 
+    def test_set_args_propagates_warehouse_options(
+        self, orchestrator: MonitoringOrchestrator
+    ) -> None:
+        """CLI warehouse flags reach the live DataManager."""
+        args = type(
+            "Args",
+            (),
+            {
+                "filter_models": "anthropic",
+                "warehouse": True,
+                "warehouse_file": "/tmp/usage.json",
+                "warehouse_retention_days": 30,
+            },
+        )()
+
+        orchestrator.set_args(args)
+
+        assert orchestrator.data_manager.filter_models == "anthropic"
+        assert orchestrator.data_manager.write_warehouse is True
+        assert orchestrator.data_manager.warehouse_file == "/tmp/usage.json"
+        assert orchestrator.data_manager.warehouse_retention_days == 30
+
     def test_stop_monitoring_with_timeout(
         self, orchestrator: MonitoringOrchestrator
     ) -> None:

@@ -229,6 +229,37 @@ class Settings(BaseSettings):
         description="Claude data directories to scan; repeat or comma-separate values",
     )
 
+    warehouse: bool = Field(
+        default=False,
+        description="Persist usage entries to the opt-in local warehouse",
+    )
+
+    warehouse_file: Optional[str] = Field(
+        default=None,
+        description="Usage warehouse file path (default ~/.claude-monitor/warehouse/usage.json)",
+    )
+
+    warehouse_retention_days: int = Field(
+        default=365,
+        ge=1,
+        description="Days of usage records to retain in the warehouse",
+    )
+
+    date_format: Optional[str] = Field(
+        default=None,
+        description="Date format for daily/monthly table periods, e.g. %d.%m.%Y",
+    )
+
+    abbreviate_tokens: bool = Field(
+        default=False,
+        description="Abbreviate token counts in table views",
+    )
+
+    sparklines: bool = Field(
+        default=False,
+        description="Show opt-in sparklines in table views",
+    )
+
     set_terminal_title: bool = Field(
         default=False,
         description="Set the terminal title from the usage snapshot",
@@ -513,6 +544,12 @@ class Settings(BaseSettings):
         args.write_state = self.write_state
         args.state_file = self.state_file
         args.data_paths = list(self.data_paths)
+        args.warehouse = self.warehouse
+        args.warehouse_file = self.warehouse_file
+        args.warehouse_retention_days = self.warehouse_retention_days
+        args.date_format = self.date_format
+        args.abbreviate_tokens = self.abbreviate_tokens
+        args.sparklines = self.sparklines
         args.filter_models = self.filter_models
         args.set_terminal_title = self.set_terminal_title
         args.title_format = self.title_format

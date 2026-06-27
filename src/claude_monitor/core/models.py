@@ -33,6 +33,7 @@ class UsageEntry:
     model: str = ""
     message_id: str = ""
     request_id: str = ""
+    project: str = "unknown"
     source: Dict[str, Any] = field(default_factory=default_source)
 
 

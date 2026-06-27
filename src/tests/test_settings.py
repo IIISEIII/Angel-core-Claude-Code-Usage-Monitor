@@ -776,6 +776,65 @@ class TestSettings:
         assert namespace.write_state is True
         assert namespace.state_file == "/tmp/s.json"
 
+    def test_warehouse_defaults_cli_and_namespace(self) -> None:
+        """The persistent warehouse is opt-in and carries its file/retention knobs."""
+        default = Settings(_cli_parse_args=[])
+        assert default.warehouse is False
+        assert default.warehouse_file is None
+        assert default.warehouse_retention_days == 365
+
+        namespace = Settings(
+            warehouse=True,
+            warehouse_file="/tmp/usage.json",
+            warehouse_retention_days=30,
+            _cli_parse_args=[],
+        ).to_namespace()
+        assert namespace.warehouse is True
+        assert namespace.warehouse_file == "/tmp/usage.json"
+        assert namespace.warehouse_retention_days == 30
+
+        parsed = Settings(
+            _cli_parse_args=[
+                "--warehouse",
+                "--warehouse-file",
+                "/tmp/cli-usage.json",
+                "--warehouse-retention-days",
+                "45",
+            ]
+        )
+        assert parsed.warehouse is True
+        assert parsed.warehouse_file == "/tmp/cli-usage.json"
+        assert parsed.warehouse_retention_days == 45
+
+    def test_table_formatter_flags_default_cli_and_namespace(self) -> None:
+        """PR #175's formatting knobs remain explicit and sparklines are opt-in."""
+        default = Settings(_cli_parse_args=[])
+        assert default.date_format is None
+        assert default.abbreviate_tokens is False
+        assert default.sparklines is False
+
+        namespace = Settings(
+            date_format="%d.%m.%Y",
+            abbreviate_tokens=True,
+            sparklines=True,
+            _cli_parse_args=[],
+        ).to_namespace()
+        assert namespace.date_format == "%d.%m.%Y"
+        assert namespace.abbreviate_tokens is True
+        assert namespace.sparklines is True
+
+        parsed = Settings(
+            _cli_parse_args=[
+                "--date-format",
+                "%d.%m.%Y",
+                "--abbreviate-tokens",
+                "--sparklines",
+            ]
+        )
+        assert parsed.date_format == "%d.%m.%Y"
+        assert parsed.abbreviate_tokens is True
+        assert parsed.sparklines is True
+
     def test_compact_default_and_namespace(self) -> None:
         """--compact defaults off and reaches the namespace (#65)."""
         assert Settings(_cli_parse_args=[]).compact is False

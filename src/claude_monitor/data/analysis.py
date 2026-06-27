@@ -12,6 +12,7 @@ from claude_monitor.core.calculations import BurnRateCalculator
 from claude_monitor.core.models import CostMode, SessionBlock, UsageEntry
 from claude_monitor.data.analyzer import SessionAnalyzer
 from claude_monitor.data.reader import load_usage_entries
+from claude_monitor.data.warehouse import UsageWarehouse, default_warehouse_path
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ def analyze_usage(
     quick_start: bool = False,
     data_path: Optional[Union[str, Path, Sequence[Union[str, Path]]]] = None,
     filter_models: str = "all",
+    write_warehouse: bool = False,
+    warehouse_file: Optional[Union[str, Path]] = None,
+    warehouse_retention_days: int = 365,
 ) -> Dict[str, Any]:
     """
     Main entry point to generate response_final.json.
@@ -60,6 +64,13 @@ def analyze_usage(
         include_raw=True,
         filter_models=filter_models,
     )
+    if write_warehouse:
+        warehouse_path = (
+            Path(warehouse_file) if warehouse_file else default_warehouse_path()
+        )
+        UsageWarehouse(
+            warehouse_path, retention_days=warehouse_retention_days
+        ).upsert_entries(entries)
     load_time = (datetime.now() - start_time).total_seconds()
     logger.info(f"Data loaded in {load_time:.3f}s")
 
@@ -242,6 +253,7 @@ def _format_block_entries(entries: List[UsageEntry]) -> List[Dict[str, Any]]:
             "model": entry.model,
             "messageId": entry.message_id,
             "requestId": entry.request_id,
+            "project": entry.project,
             "source": entry.source,
         }
         for entry in entries

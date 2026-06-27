@@ -279,6 +279,23 @@ def _update_processed_hashes(data: Dict[str, Any], processed_hashes: Set[str]) -
         processed_hashes.add(unique_hash)
 
 
+def _extract_project(data: Dict[str, Any]) -> str:
+    """Extract the project/workspace dimension without changing time bucketing."""
+    for key in ("cwd", "project", "project_path", "projectPath"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    workspace = data.get("workspace")
+    if isinstance(workspace, dict):
+        for key in ("cwd", "project", "path"):
+            value = workspace.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    return "unknown"
+
+
 def _map_to_usage_entry(
     data: Dict[str, Any],
     mode: CostMode,
@@ -323,6 +340,7 @@ def _map_to_usage_entry(
             model=model,
             message_id=message_id,
             request_id=request_id,
+            project=_extract_project(data),
             source=source or {"kind": SOURCE_KIND_CLAUDE_JSONL, "account": None},
         )
 

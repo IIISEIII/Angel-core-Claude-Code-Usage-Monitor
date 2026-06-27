@@ -700,6 +700,7 @@ class TestMapToUsageEntry:
             "model": "claude-3-haiku",
             "request_id": "req_456",
             "cost": 0.001,
+            "cwd": "/workspace/app",
         }
 
         with patch(
@@ -745,6 +746,7 @@ class TestMapToUsageEntry:
         assert result.model == "claude-3-haiku"
         assert result.message_id == "msg_123"
         assert result.request_id == "req_456"
+        assert result.project == "/workspace/app"
 
     def test_map_to_usage_entry_no_timestamp(
         self, mock_components: Tuple[Mock, Mock]

@@ -82,6 +82,11 @@ class MonitoringOrchestrator:
         # Propagate the model filter so non-Anthropic entries are excluded from
         # the live data the same way as one-shot (#113).
         self.data_manager.filter_models = getattr(args, "filter_models", "all")
+        self.data_manager.write_warehouse = getattr(args, "warehouse", False)
+        self.data_manager.warehouse_file = getattr(args, "warehouse_file", None)
+        self.data_manager.warehouse_retention_days = getattr(
+            args, "warehouse_retention_days", 365
+        )
 
     def register_update_callback(
         self, callback: Callable[[Dict[str, Any]], None]
