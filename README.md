@@ -79,7 +79,19 @@ mkdir -p ~/Library/"Application Support"/iTerm2/Scripts/AutoLaunch
 cp macos-setup/autolaunch.applescript ~/Library/"Application Support"/iTerm2/Scripts/AutoLaunch/claude-monitor-autolaunch.scpt
 ```
 
-You'll also need an iTerm2 profile named **Monitor** (any font/appearance you like — the theme colors are handled by `claude-monitor` itself, not the profile).
+### Required setup: the iTerm2 "Monitor" profile
+
+The `macos-setup/` scripts assume an iTerm2 profile named exactly **Monitor** exists — create one via iTerm2 → Settings → Profiles → **+**, name it `Monitor`. The theme colors come entirely from `claude-monitor` itself (see above), not the profile, so appearance is up to you. For reference, here's the exact font setting used for the screenshot at the top of this README (Profiles → Text tab):
+
+| Setting | Value |
+|---|---|
+| Font | JetBrainsMonoNL Nerd Font |
+| Style | Medium |
+| Size | 8 |
+| Horizontal Spacing | 100% |
+| Vertical Spacing | 132% |
+
+A Nerd Font isn't strictly required — claude-monitor's icons are standard Unicode emoji and Braille spinner glyphs, not Nerd Font glyphs — any monospace font works. The generous 132% vertical spacing is what gives the dashboard its airy look; a value closer to 100% will pack the same content into a visibly shorter window.
 
 For everything else — installation options, `--plan`, all the other flags, features, troubleshooting — see the original [README.upstream.md](README.upstream.md); none of that changed here.
 

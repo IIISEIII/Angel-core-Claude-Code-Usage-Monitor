@@ -79,7 +79,19 @@ mkdir -p ~/Library/"Application Support"/iTerm2/Scripts/AutoLaunch
 cp macos-setup/autolaunch.applescript ~/Library/"Application Support"/iTerm2/Scripts/AutoLaunch/claude-monitor-autolaunch.scpt
 ```
 
-加えて、名前が **Monitor** のiTerm2プロファイルが必要です（フォント・外観は自由でOK。配色は `claude-monitor` 自体が制御するので、プロファイル側の配色設定には依存しません）。
+### 必須セットアップ：iTerm2「Monitor」プロファイル
+
+`macos-setup/` 配下のスクリプトは、名前が正確に **Monitor** のiTerm2プロファイルが存在する前提で動きます。iTerm2 → 設定 → Profiles → **+** で新規作成し、名前を `Monitor` にしてください。配色は（上記の通り）`claude-monitor` 自体が制御するので、プロファイル側の見た目は自由です。参考として、このREADME冒頭のスクリーンショットで使っているフォント設定は以下の通りです（Profiles → Text タブ）。
+
+| 設定項目 | 値 |
+|---|---|
+| フォント | JetBrainsMonoNL Nerd Font |
+| スタイル | Medium |
+| サイズ | 8 |
+| 水平方向の間隔（Horizontal Spacing） | 100% |
+| 垂直方向の間隔（Vertical Spacing） | 132% |
+
+Nerd Fontは必須ではありません（claude-monitorのアイコンは標準のUnicode絵文字とBrailleスピナーグリフのみで、Nerd Font固有のグリフは使っていません）。等幅フォントであれば何でも動作します。垂直方向の間隔132%というゆったりめの設定が、ダッシュボードの余白のある見た目を作っています。100%に近づけるほど、同じ内容がより低いウィンドウに収まります。
 
 インストールオプション、`--plan` を含む各種フラグ、機能一覧、トラブルシューティングなど、それ以外はすべてオリジナルの [README.upstream.md](README.upstream.md)（英語）を参照してください。ここで変更した点以外は何も変わっていません。
 
