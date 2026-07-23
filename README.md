@@ -3,72 +3,38 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![日本語](https://img.shields.io/badge/日本語-README-blue.svg)](README.ja.md)
 
-A personal fork of [**Maciek-roboblog/Claude-Code-Usage-Monitor**](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) — all credit for the original tool, its architecture, and its feature set goes to **Maciek** ([@Maciek-roboblog](https://github.com/Maciek-roboblog)). This fork does not add features; it rethemes and reshapes the terminal dashboard to a personal taste ("Angelcore" — soft, muted, pastel) and fixes one rendering bug found along the way. The full original README is preserved at [README.upstream.md](README.upstream.md), and the original `LICENSE` (MIT) is unchanged.
-
-If you just want the upstream tool, go use the original repo — it's actively maintained and this fork will drift from it. This repo exists to document a specific personal setup (an "Angelcore"-themed, ultra-compact iTerm2 dashboard) in case it's useful or interesting to anyone else doing the same kind of customization.
+A personal fork of [**Maciek-roboblog/Claude-Code-Usage-Monitor**](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) — all credit for the tool itself goes to **Maciek**. This fork doesn't add anything; it just repaints the dashboard in a softer, more pastel mood ("Angelcore") and fixes one real bug found along the way. If you want the actively maintained original, [go use that one](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) — this repo is just a record of one particular desk setup, kept public in case the theme or the iTerm2 automation is useful to someone else too. Original README preserved at [README.upstream.md](README.upstream.md); the MIT license is untouched.
 
 ![Dashboard](doc/angelcore-dashboard.png)
 
 ---
 
-## What's different from upstream
+## Prerequisites
 
-Everything below is layered on top of upstream `claude-monitor` v4.0.0. Three source files were edited (see `git diff` against the `upstream/main` branch, or the sections below); four new setup scripts were added under [`macos-setup/`](macos-setup/).
+- macOS + [iTerm2](https://iterm2.com) — the auto-launch scripts are iTerm2-specific (`claude-monitor` itself runs anywhere)
+- [uv](https://docs.astral.sh/uv/), for installing
+- An iTerm2 profile named exactly **Monitor**: iTerm2 → Settings → Profiles → **+**. Appearance is up to you — colors come from `claude-monitor` itself, not the profile — but here's the font from the screenshot above, for reference (Profiles → Text tab):
 
-### 1. Angelcore color theme
+  | Setting | Value |
+  |---|---|
+  | Font | JetBrainsMonoNL Nerd Font |
+  | Style | Medium |
+  | Size | 8 |
+  | Horizontal Spacing | 100% |
+  | Vertical Spacing | 132% |
 
-`src/claude_monitor/terminal/themes.py` — both the light- and dark-background `Theme` tables were rewritten to a muted, low-saturation "Angelcore" palette instead of the upstream xterm-256 palette:
-
-| Role | Hex | Used for |
-|---|---|---|
-| `foreground` | `#3F3E4A` | primary text |
-| `soft_text` | `#6F7284` | secondary text |
-| `muted` | `#8A8B98` | dim text, dividers, bar track |
-| `blue` | `#557C9C` | info, model=Sonnet, plan=max5 |
-| `cyan` | `#4F8D91` | chart lines |
-| `lavender` | `#77709F` | header, model=Opus, plan=max20 |
-| `purple` | `#675D91` | progress-bar fill (uniform across all usage tiers) |
-| `pink` | `#A66F87` | plan=pro |
-| `rose` | `#AE6677` | errors |
-| `green` | `#5F856B` | success |
-| `yellow` | `#927B48` | warnings |
-
-Dark-mode variants are the same hues lightened toward white (see the file for exact blend factors) so the palette stays readable if the terminal profile switches with macOS appearance.
-
-One deliberate choice: upstream color-codes the progress-bar *fill* by usage tier (green/yellow/red). This fork keeps the fill a uniform purple and lets the 🟢/🟡/🔴 emoji carry the tier signal instead — because upstream's own tier-threshold selection for the bar fill didn't always agree with the emoji's threshold selection, which looked like a bug (a red-tier-colored bar next to a 🟡 medium icon). Uniform fill sidesteps that mismatch entirely.
-
-### 2. `--no-header` ultra-compact mode
-
-`src/claude_monitor/ui/session_display.py` — the existing `--no-header` flag only hid the title banner upstream; two blank-line inserts and the trailing `⏰ HH:MM:SS 📝 Active session | Ctrl+C to exit` footer were unconditional. This fork gates all of them behind the same flag, so `--no-header` now means what it sounds like: content runs from the first metric line straight through the last, with no leading or trailing padding at all.
-
-### 3. Live-display duplication bug fix
-
-`src/claude_monitor/ui/display_controller.py` — `LiveDisplayManager` created Rich's `Live` with `vertical_overflow="visible"`. When the rendered content height is close to (or equal to) the terminal's row count, printing the last line's newline forces a real terminal scroll, which permanently desyncs `Live`'s internal cursor-position tracking — every refresh after that leaves a stale duplicate frame in the scrollback instead of overwriting in place. This is very noticeable once you size a pane tightly to its content (exactly what `--no-header` invites you to do) and scroll up: dozens of duplicate frames stacked in the scrollback.
-
-Fixed by switching to `vertical_overflow="crop"`, so Rich clips overflow instead of ever scrolling the terminal. Confirmed clean over 60+ refresh cycles at a pane height exactly equal to content height.
-
-### 4. macOS / iTerm2 auto-launch setup (`macos-setup/`)
-
-Not upstream features — a personal automation layer that opens a two-pane iTerm2 window on login:
-
-- **`autolaunch.applescript`** — install into `~/Library/Application Support/iTerm2/Scripts/AutoLaunch/` to auto-run on every iTerm2 launch (skips if already running). Splits one window into two panes and pins their sizes: **top pane, 21 rows × 80 columns** — the live dashboard (`claude-monitor --plan pro --api --no-header`), sized to exactly fit its 21-line compact render (no wrap, no clip, no scroll-desync per the fix above); **bottom pane, 5 rows** — the companion status strip below.
-- **`autostart-terminal.sh`** — same layout, runnable by hand instead of via AutoLaunch.
-- **`weekly-status.sh`** — the bottom-pane script. Reads the OAuth usage cache that `--api` maintains and prints **5-hour** and **Weekly** rate-limit bars (upstream's dashboard doesn't surface these two windows directly). Polls with `--api-ttl-seconds 60` and a matching `sleep 60`, so data is at most 60s stale — tighter than upstream's 180s default TTL — while still respecting Anthropic's `Retry-After` backoff if the endpoint ever 429s.
-- **`combined-monitor.sh`** — a single-pane alternative that prints the full dashboard followed by the same 5-hour/Weekly bars, for anyone who'd rather not split panes.
-
-A non-obvious detail if you adapt this: iTerm2's AppleScript `set rows to N` on a split pane resizes the *whole window*, expanding to fit whichever pane was resized *most recently* while leaving sibling panes at their current pixel size. So the smaller pane must be sized first, and the dashboard pane sized last — reverse the order and the math comes out wrong.
+  Nerd Font is a nice-to-have, not a requirement — the icons are plain Unicode emoji, so any monospace font works. The generous 132% vertical spacing is what gives the dashboard its room-to-breathe look; closer to 100% packs the same content into a shorter window.
+- `~/.local/bin` on your `PATH` — that's where `uv tool install` puts the `claude-monitor` binary, and the setup scripts call it by name. `uv` will tell you if it isn't set up yet.
 
 ---
 
 ## Install
 
-This fork isn't published to PyPI. Install it directly from this repo with [uv](https://docs.astral.sh/uv/):
-
 ```bash
 uv tool install git+https://github.com/IIISEIII/Angel-core-Claude-Code-Usage-Monitor.git
 ```
 
-Then, optionally, set up the iTerm2 auto-launch layer:
+Then, optionally, the iTerm2 auto-launch layer:
 
 ```bash
 mkdir -p ~/.claude-monitor
@@ -79,24 +45,50 @@ mkdir -p ~/Library/"Application Support"/iTerm2/Scripts/AutoLaunch
 cp macos-setup/autolaunch.applescript ~/Library/"Application Support"/iTerm2/Scripts/AutoLaunch/claude-monitor-autolaunch.scpt
 ```
 
-### Required setup: the iTerm2 "Monitor" profile
+Next time iTerm2 opens, a two-pane window shows up on its own — no more chasing it down manually. For everything else — install options, `--plan`, the rest of the flags, the full feature list — see [README.upstream.md](README.upstream.md); none of that changed here.
 
-The `macos-setup/` scripts assume an iTerm2 profile named exactly **Monitor** exists — create one via iTerm2 → Settings → Profiles → **+**, name it `Monitor`. The theme colors come entirely from `claude-monitor` itself (see above), not the profile, so appearance is up to you. For reference, here's the exact font setting used for the screenshot at the top of this README (Profiles → Text tab):
+---
 
-| Setting | Value |
-|---|---|
-| Font | JetBrainsMonoNL Nerd Font |
-| Style | Medium |
-| Size | 8 |
-| Horizontal Spacing | 100% |
-| Vertical Spacing | 132% |
+## What changed from upstream
 
-A Nerd Font isn't strictly required — claude-monitor's icons are standard Unicode emoji and Braille spinner glyphs, not Nerd Font glyphs — any monospace font works. The generous 132% vertical spacing is what gives the dashboard its airy look; a value closer to 100% will pack the same content into a visibly shorter window.
+Three source files edited, four scripts added under [`macos-setup/`](macos-setup/).
 
-For everything else — installation options, `--plan`, all the other flags, features, troubleshooting — see the original [README.upstream.md](README.upstream.md); none of that changed here.
+### The colors
+
+`themes.py` — both theme tables rewritten from upstream's xterm-256 palette to something quieter:
+
+| Role | Hex | Used for |
+|---|---|---|
+| `foreground` | `#3F3E4A` | primary text |
+| `soft_text` | `#6F7284` | secondary text |
+| `muted` | `#8A8B98` | dim text, dividers, bar track |
+| `blue` | `#557C9C` | info, model=Sonnet, plan=max5 |
+| `cyan` | `#4F8D91` | chart lines |
+| `lavender` | `#77709F` | header, model=Opus, plan=max20 |
+| `purple` | `#675D91` | progress-bar fill |
+| `pink` | `#A66F87` | plan=pro |
+| `rose` | `#AE6677` | errors |
+| `green` | `#5F856B` | success |
+| `yellow` | `#927B48` | warnings |
+
+Dark mode gets the same hues, lightened. Progress bars are now a uniform purple rather than color-coded by usage tier — upstream's tier logic for the *bar* didn't always agree with the tier logic for the *emoji* beside it, so you'd occasionally get a red-tier bar next to a calm yellow 🟡. The emoji alone carries that signal now; the bar just fills up.
+
+### `--no-header`, for real this time
+
+`session_display.py` — upstream's `--no-header` hid the title banner but still printed two blank lines and a trailing "Active session" footer unconditionally. Both are now gated on the same flag, so `--no-header` finally means what it says: first line to last, nothing extra on either end.
+
+### The scrollback ghost
+
+`display_controller.py` — this one's a genuine bug, not a preference. Rich's `Live` was created with `vertical_overflow="visible"`. Size a pane exactly to its content — which `--no-header` all but invites you to do — and every refresh nudges the terminal into scrolling once, permanently desyncing `Live`'s cursor tracking. Scroll up afterward and you'll find dozens of ghost frames stacked in the scrollback, one per refresh, forever. Switched to `vertical_overflow="crop"`, which clips instead of scrolling. Confirmed clean over 60+ refreshes at a pane sized exactly to its content.
+
+### The iTerm2 layer
+
+`macos-setup/` — not upstream, just automation. `autolaunch.applescript` opens a two-pane iTerm2 window on startup, sized to fit the compact render exactly (21 rows for the dashboard, 5 for the status strip below). `weekly-status.sh` reads the same `--api` usage cache and prints **5-hour** / **Weekly** bars that upstream's dashboard doesn't surface directly, polling every 60s instead of the 180s default. `combined-monitor.sh` is a one-pane version for anyone who'd rather skip the split.
+
+One iTerm2 quirk worth knowing if you adapt this: resizing a pane's `rows` resizes the *whole window*, growing to fit whichever pane you touched last while its sibling holds still. Resize the small pane first and the dashboard pane last — backwards, and the math won't come out right.
 
 ---
 
 ## License
 
-MIT, unchanged from upstream. See [LICENSE](LICENSE). Copyright (c) 2025 Maciej (original author); customizations above (c) 2026 ISEI.
+MIT, same as upstream. See [LICENSE](LICENSE). Copyright (c) 2025 Maciej (original author); the changes above, (c) 2026 ISEI.
