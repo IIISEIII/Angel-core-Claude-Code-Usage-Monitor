@@ -3,17 +3,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![English](https://img.shields.io/badge/English-README-blue.svg)](README.md)
 
-[**Maciek-roboblog/Claude-Code-Usage-Monitor**](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) の個人用フォークです。ツール本体の功績はすべて **Maciek** さんのもの。このフォークは機能を何も足していません。ダッシュボードの雰囲気を柔らかいパステル調（"Angelcore"）に塗り替えて、途中で見つけた本物のバグを1つ直しただけです。本家が欲しいなら、活発にメンテナンスされている[オリジナル](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)をどうぞ。このリポジトリは、ちょっとした個人的な作業環境の記録を、誰かの役に立つかもしれないので公開しているだけのものです。オリジナルのREADMEは[README.upstream.md](README.upstream.md)にそのまま残してあり、MITライセンスも変更していません。
+[**Maciek-roboblog/Claude-Code-Usage-Monitor**](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) の個人用フォークでございます。ツール本体の功績はすべて **Maciek** さんに帰するものです。このフォークは新しい機能を何も加えておりません。ダッシュボードの佇まいを、より柔らかくパステルな趣（"Angelcore"）に整え、その過程で見つかった本物の不具合を一つ、静かに直しただけのものです。本家をお探しでしたら、活発にメンテナンスされている[オリジナル](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)がお待ちしております。このリポジトリは、とある個人の作業環境の記録を、同じような手入れをどなたかがされる際のお役に立てばと思い、公開しているものです。オリジナルのREADMEは[README.upstream.md](README.upstream.md)にそのまま残してあり、MITライセンスにも手を加えておりません。
 
 ![Dashboard](doc/angelcore-dashboard.png)
 
 ---
 
-## 事前に必要なもの
+## 事前にご用意いただくもの
 
-- macOS + [iTerm2](https://iterm2.com) — 自動起動スクリプトはiTerm2専用です（`claude-monitor` 自体はどこでも動きます）
-- インストール用の [uv](https://docs.astral.sh/uv/)
-- 名前が正確に **Monitor** のiTerm2プロファイル：iTerm2 → 設定 → Profiles → **+**。見た目は自由です（配色は `claude-monitor` 自体が持っていて、プロファイルには依存しません）が、参考までに上のスクリーンショットで使っているフォントは以下の通りです（Profiles → Text タブ）。
+- macOS と [iTerm2](https://iterm2.com) — 自動起動スクリプトはiTerm2専用でございます（`claude-monitor` 本体はどこでも快く動きます）。
+- インストール用の [uv](https://docs.astral.sh/uv/)。
+- 名前が正確に **Monitor** のiTerm2プロファイル：iTerm2 → 設定 → Profiles → **+** よりご用意ください。見た目はお好みのままで構いません（配色は `claude-monitor` 自身が受け持っており、プロファイルには依存いたしません）。ご参考までに、上のスクリーンショットで用いているフォントは以下の通りです（Profiles → Text タブ）。
 
   | 設定項目 | 値 |
   |---|---|
@@ -23,8 +23,8 @@
   | 水平方向の間隔 | 100% |
   | 垂直方向の間隔 | 132% |
 
-  Nerd Fontはあれば嬉しい程度で必須ではありません（アイコンは普通のUnicode絵文字なので、等幅フォントなら何でも動きます）。垂直方向132%というゆったりした間隔が、あの余白のある雰囲気を作っています。100%に近づけるほど、同じ内容がより低いウィンドウに収まります。
-- `PATH` に `~/.local/bin` が通っていること — `uv tool install` はここに `claude-monitor` を置きますし、セットアップスクリプトもフルパスではなく名前で呼んでいます。通っていなければ、uv自身がちゃんと教えてくれます。
+  Nerd Fontはあれば嬉しい程度のもので、必須ではございません。アイコンはごく普通のUnicode絵文字ですので、等幅フォントであればどれでも構いません。垂直方向132%というゆったりとした間隔が、あの落ち着いた余白を生んでおります。お好みで100%に近づけていただければ、同じ内容がより低いウィンドウに収まります。
+- `PATH` に `~/.local/bin` が通っていること。`uv tool install` は `claude-monitor` をそこに置き、セットアップスクリプトもフルパスではなく名前でお呼びしております。通っていなければ、uvがきちんとお知らせしてくれます。
 
 ---
 
@@ -34,7 +34,7 @@
 uv tool install git+https://github.com/IIISEIII/Angel-core-Claude-Code-Usage-Monitor.git
 ```
 
-さらに、iTerm2の自動起動レイヤーもお好みで。
+続けて、よろしければiTerm2の自動起動レイヤーもどうぞ。
 
 ```bash
 mkdir -p ~/.claude-monitor
@@ -45,17 +45,17 @@ mkdir -p ~/Library/"Application Support"/iTerm2/Scripts/AutoLaunch
 cp macos-setup/autolaunch.applescript ~/Library/"Application Support"/iTerm2/Scripts/AutoLaunch/claude-monitor-autolaunch.scpt
 ```
 
-次にiTerm2を開くと、2ペインのウィンドウが勝手に立ち上がります。もう自分で起動する必要はありません。それ以外——インストールオプション、`--plan`、他のフラグ、機能一覧など——はすべて[README.upstream.md](README.upstream.md)（英語）を参照してください。ここで変えたところ以外は何も変わっていません。
+以降は、iTerm2を開くたびに2ペインのウィンドウがお待ちしております。手動での起動は不要でございます。それ以外——インストールオプション、`--plan`、その他のフラグ、機能一覧など——は、すべて[README.upstream.md](README.upstream.md)（英語）をご参照ください。ここで触れた点以外は、何も変わっておりません。
 
 ---
 
 ## オリジナルからの変更点
 
-ソースファイル3つを編集し、[`macos-setup/`](macos-setup/) 配下にスクリプトを4つ追加しています。
+ソースファイルを3つ編集し、[`macos-setup/`](macos-setup/) 配下にスクリプトを4つ加えております。
 
-### 色
+### 色について
 
-`themes.py` — ライト/ダーク両方のテーマテーブルを、upstreamのxterm-256パレットから、もう少し静かな配色に書き換えました。
+`themes.py` — ライト・ダーク両方のテーマテーブルを、upstreamのxterm-256パレットから、もう少し静かな色合いに書き改めました。
 
 | 役割 | Hex | 用途 |
 |---|---|---|
@@ -71,24 +71,24 @@ cp macos-setup/autolaunch.applescript ~/Library/"Application Support"/iTerm2/Scr
 | `green` | `#5F856B` | 成功表示 |
 | `yellow` | `#927B48` | 警告表示 |
 
-ダークモードは同じ色相を明るくしただけです。プログレスバーの塗りは使用率段階で色分けせず、紫で統一しました。upstreamでは「バー用」の段階判定と「絵文字用」の段階判定が時々食い違い、落ち着いた黄色🟡の隣に赤段階の色のバーが並ぶ、ということがあったからです。段階を伝える役目は絵文字だけに任せ、バーはただ静かに埋まっていきます。
+ダークモードには、同じ色相を明るくしたものをお使いいただいております。プログレスバーの塗りは使用率段階での色分けをやめ、紫一色に整えました。upstreamでは「バー」の段階判定と「絵文字」の段階判定が時折食い違い、落ち着いた黄色🟡の隣に赤段階の色のバーが並ぶ、ということがございました。その小さな行き違いは静かに解消し、段階をお伝えする役目は絵文字にお任せしております。バーはただ、意見を持たずに埋まってまいります。
 
-### `--no-header`、今度こそ本当に
+### `--no-header`、名は体を表すように
 
-`session_display.py` — upstreamの `--no-header` はタイトルバナーを隠すだけで、冒頭の空行2つと末尾の「Active session」フッターは無条件に出力されていました。両方とも同じフラグの条件に含めたので、`--no-header` は名前の通り、最初の行から最後の行まで、余分なものは何も付かなくなりました。
+`session_display.py` — upstreamの `--no-header` はタイトルバナーこそ隠しておりましたが、冒頭の空行2つと末尾の「Active session」フッターは、変わらず無条件に出力されておりました。両方とも同じフラグの管理下に置きましたので、`--no-header` は今度こそ名前の通り、最初の行から最後の行まで、余分なものを何も付け加えなくなりました。
 
-### scrollbackの幽霊
+### scrollbackにまつわる、ささやかな不具合
 
-`display_controller.py` — これは好みの問題ではなく、正真正銘のバグでした。`LiveDisplayManager` はRichの `Live` を `vertical_overflow="visible"` で作っていました。ペインの高さを内容ぴったりに詰める（`--no-header` はまさにそれを誘発します）と、更新のたびに本物のターミナルスクロールが1回起きて、`Live` 内部のカーソル位置管理が永久にズレます。あとでスクロールして見返すと、更新のたびに増えた古いフレームの幽霊たちが何十個もscrollbackに積み重なっている、という状態でした。`vertical_overflow="crop"` に変えて、スクロールの代わりに単純に切り詰めるようにしたら解決。ペインの高さを内容とぴったり同じにした状態で60回以上更新を確認し、幽霊は出なくなりました。
+`display_controller.py` — こちらは好みの問題ではなく、正真正銘の不具合でございました。`LiveDisplayManager` はRichの `Live` を `vertical_overflow="visible"` にて生成しておりました。ペインの高さを内容ぴったりに整えますと——`--no-header` はまさにそれを誘っております——更新のたびに、ターミナルは一度スクロールを促され、`Live` が自らのカーソル位置を見失ってしまいます。以降は更新のたびに、上書きされるはずだった古いフレームが、scrollbackの中でそっと列をなしてお待ちになる、という次第でございました。`vertical_overflow="crop"` に改め、スクロールではなく単純に切り詰める形に変更いたしました。ペインの高さを内容とぴったり同じにした状態で60回以上の更新を確認し、以後は行き違いが起きないことを確かめております。
 
-### iTerm2レイヤー
+### iTerm2まわりの支度
 
-`macos-setup/` — upstreamの機能ではなく、こちらの自動化です。`autolaunch.applescript` はiTerm2起動時に2ペインのウィンドウを開き、サイズを固定します（上：ダッシュボード用21行、下：ステータス表示用5行——どちらもそのコンパクト描画にぴったり収まるサイズ）。`weekly-status.sh` は同じ `--api` の使用量キャッシュを読み、upstreamのダッシュボードには直接出てこない **5-hour** / **Weekly** のバーを表示します。ポーリング間隔はデフォルトの180秒ではなく60秒。`combined-monitor.sh` は、ペイン分割をしたくない人向けの1ペイン版です。
+`macos-setup/` — upstreamの機能ではなく、こちらでご用意した自動化でございます。`autolaunch.applescript` はiTerm2の起動時に2ペインのウィンドウを開き、それぞれの描画にぴったり収まる高さに整えます（上段はダッシュボード用に21行、下段はステータス表示用に5行）。`weekly-status.sh` は同じ `--api` の使用量キャッシュを読み、upstreamのダッシュボードには直接現れない **5-hour** と **Weekly** のバーをお見せいたします。確認の間隔はデフォルトの180秒ではなく60秒に整えました。`combined-monitor.sh` は、ペインを分けたくない方向けに、同じ2本のバーを1ペインにまとめたものでございます。
 
-同じような構成を真似る人向けの豆知識：iTerm2で分割ペインの `rows` を変更すると、実は「ウィンドウ全体」がリサイズされ、直近に触った方のペインに合わせて広がり、もう片方はそのままのサイズで据え置かれます。だから小さい方のペインを先に、ダッシュボード側を最後に指定する必要があります。順番を逆にすると、計算が合わなくなります。
+同じような支度をされる方への、ささやかな心得を一つ。iTerm2で分割済みペインの `rows` を変更いたしますと、実のところ「ウィンドウ全体」がリサイズされ、直近に手を加えた方のペインに合わせて広がり、もう一方はそのままの大きさで据え置かれます。ですので、小さい方のペインを先に、ダッシュボード側を最後にお整えください。順序が逆になりますと、計算が思うようには参りません。
 
 ---
 
 ## ライセンス
 
-MIT、upstreamと同じです。[LICENSE](LICENSE) 参照。Copyright (c) 2025 Maciej（オリジナル作者）、上記の変更部分は (c) 2026 ISEI。
+MIT。upstreamから変更はございません。[LICENSE](LICENSE) をご参照ください。Copyright (c) 2025 Maciej（オリジナル作者）、上記の変更部分につきましては (c) 2026 ISEI。
