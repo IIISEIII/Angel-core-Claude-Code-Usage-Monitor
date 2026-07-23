@@ -71,115 +71,115 @@ class AdaptiveColorScheme:
 
     @staticmethod
     def get_light_background_theme() -> Theme:
-        """Font colors optimized for light terminal backgrounds (WCAG AA+ contrast)."""
+        """Angelcore palette, tuned for light terminal backgrounds."""
         return Theme(
             {
-                "header": "color(17)",  # Deep blue (#00005f) - 21:1 contrast
-                "info": "color(19)",  # Dark blue (#0000af) - 18:1 contrast
-                "warning": "color(166)",  # Dark orange (#d75f00) - 8:1 contrast
-                "error": "color(124)",  # Dark red (#af0000) - 12:1 contrast
-                "success": "color(22)",  # Dark green (#005f00) - 15:1 contrast
-                "value": "color(235)",  # Very dark gray (#262626) - 16:1 contrast
-                "dim": "color(243)",  # Medium gray (#767676) - 5:1 contrast
-                "separator": "color(240)",  # Light gray (#585858) - 6:1 contrast
-                "progress_bar": "black",  # Pure black for light theme
-                "highlight": "color(124)",  # Dark red (#af0000) - matches error
+                "header": "#77709F",  # lavender
+                "info": "#557C9C",  # blue
+                "warning": "#927B48",  # yellow
+                "error": "#AE6677",  # rose
+                "success": "#5F856B",  # green
+                "value": "#3F3E4A",  # foreground
+                "dim": "#8A8B98",  # muted
+                "separator": "#8A8B98",  # muted
+                "progress_bar": "#675D91",  # purple
+                "highlight": "#AE6677",  # rose - matches error
                 # Cost styles
-                "cost.low": "black",  # Pure black for light theme
-                "cost.medium": "black",  # Pure black for light theme
-                "cost.high": "black",  # Pure black for light theme
+                "cost.low": "#675D91",  # purple - uniform fill, tier shown by icon only
+                "cost.medium": "#675D91",  # purple - uniform fill, tier shown by icon only
+                "cost.high": "#675D91",  # purple - uniform fill, tier shown by icon only
                 # Table styles
-                "table.border": "color(238)",  # Medium-dark gray for better visibility
-                "table.header": "bold color(17)",  # Bold deep blue
-                "table.row": "color(235)",  # Very dark gray
-                "table.row.alt": "color(238)",  # Slightly lighter gray
+                "table.border": "#8A8B98",  # muted
+                "table.header": "bold #77709F",  # bold lavender
+                "table.row": "#3F3E4A",  # foreground
+                "table.row.alt": "#6F7284",  # soft_text
                 # Progress styles
-                "progress.bar.fill": "black",  # Pure black for light theme
-                "progress.bar": "black",  # Pure black for light theme (fallback)
-                "progress.bar.empty": "color(250)",  # Very light gray for light theme
-                "progress.percentage": "bold color(235)",  # Bold very dark gray
+                "progress.bar.fill": "#675D91",  # purple
+                "progress.bar": "#675D91",  # purple (fallback)
+                "progress.bar.empty": "#D3D2D8",  # surface_lavender x muted
+                "progress.percentage": "bold #3F3E4A",  # bold foreground
                 # Chart styles
-                "chart.bar": "color(17)",  # Deep blue for better visibility
-                "chart.line": "color(19)",  # Darker blue
-                "chart.point": "color(124)",  # Dark red
-                "chart.axis": "color(240)",  # Light gray
-                "chart.label": "color(235)",  # Very dark gray
+                "chart.bar": "#557C9C",  # blue
+                "chart.line": "#4F8D91",  # cyan
+                "chart.point": "#AE6677",  # rose
+                "chart.axis": "#8A8B98",  # muted
+                "chart.label": "#3F3E4A",  # foreground
                 # Status styles
-                "status.active": "color(22)",  # Dark green
-                "status.inactive": "color(243)",  # Medium gray
-                "status.warning": "color(166)",  # Dark orange
-                "status.error": "color(124)",  # Dark red
+                "status.active": "#5F856B",  # green
+                "status.inactive": "#8A8B98",  # muted
+                "status.warning": "#927B48",  # yellow
+                "status.error": "#AE6677",  # rose
                 # Time styles
-                "time.elapsed": "color(235)",  # Very dark gray
-                "time.remaining": "color(166)",  # Dark orange
-                "time.duration": "color(19)",  # Dark blue
+                "time.elapsed": "#3F3E4A",  # foreground
+                "time.remaining": "#927B48",  # yellow
+                "time.duration": "#557C9C",  # blue
                 # Model styles
-                "model.opus": "color(17)",  # Deep blue
-                "model.sonnet": "color(19)",  # Dark blue
-                "model.haiku": "color(22)",  # Dark green
-                "model.unknown": "color(243)",  # Medium gray
+                "model.opus": "#77709F",  # lavender
+                "model.sonnet": "#557C9C",  # blue
+                "model.haiku": "#5F856B",  # green
+                "model.unknown": "#8A8B98",  # muted
                 # Plan styles
-                "plan.pro": "color(166)",  # Orange (premium)
-                "plan.max5": "color(19)",  # Dark blue
-                "plan.max20": "color(17)",  # Deep blue
-                "plan.custom": "color(22)",  # Dark green
+                "plan.pro": "#A66F87",  # pink (premium)
+                "plan.max5": "#557C9C",  # blue
+                "plan.max20": "#77709F",  # lavender
+                "plan.custom": "#5F856B",  # green
             }
         )
 
     @staticmethod
     def get_dark_background_theme() -> Theme:
-        """Font colors optimized for dark terminal backgrounds (WCAG AA+ contrast)."""
+        """Angelcore palette, lightened for dark terminal backgrounds."""
         return Theme(
             {
-                "header": "color(117)",  # Light blue (#87d7ff) - 14:1 contrast
-                "info": "color(111)",  # Light cyan (#87afff) - 12:1 contrast
-                "warning": "color(214)",  # Orange (#ffaf00) - 11:1 contrast
-                "error": "color(203)",  # Light red (#ff5f5f) - 9:1 contrast
-                "success": "color(118)",  # Light green (#87ff00) - 15:1 contrast
-                "value": "color(253)",  # Very light gray (#dadada) - 17:1 contrast
-                "dim": "color(245)",  # Medium light gray (#8a8a8a) - 7:1 contrast
-                "separator": "color(248)",  # Light gray (#a8a8a8) - 9:1 contrast
-                "progress_bar": "white",  # Pure white for dark theme
-                "highlight": "color(203)",  # Light red (#ff5f5f) - matches error
+                "header": "#A7A2C1",  # lavender, lightened
+                "info": "#90AABF",  # blue, lightened
+                "warning": "#B8A988",  # yellow, lightened
+                "error": "#CA9CA7",  # rose, lightened
+                "success": "#97B09F",  # green, lightened
+                "value": "#D5D5D7",  # foreground, lightened
+                "dim": "#B3B4BC",  # muted, lightened
+                "separator": "#B3B4BC",  # muted, lightened
+                "progress_bar": "#9C96B8",  # purple, lightened
+                "highlight": "#CA9CA7",  # rose - matches error
                 # Cost styles
-                "cost.low": "white",  # Pure white for dark theme
-                "cost.medium": "white",  # Pure white for dark theme
-                "cost.high": "white",  # Pure white for dark theme
+                "cost.low": "#9C96B8",  # purple, lightened - uniform fill, tier shown by icon only
+                "cost.medium": "#9C96B8",  # purple, lightened - uniform fill, tier shown by icon only
+                "cost.high": "#9C96B8",  # purple, lightened - uniform fill, tier shown by icon only
                 # Table styles
-                "table.border": "color(248)",  # Light gray
-                "table.header": "bold color(117)",  # Bold light blue
-                "table.row": "color(253)",  # Very light gray
-                "table.row.alt": "color(251)",  # Slightly darker gray
+                "table.border": "#B3B4BC",  # muted, lightened
+                "table.header": "bold #A7A2C1",  # bold lavender, lightened
+                "table.row": "#D5D5D7",  # foreground, lightened
+                "table.row.alt": "#A1A3AF",  # soft_text, lightened
                 # Progress styles
-                "progress.bar.fill": "white",  # Pure white for dark theme
-                "progress.bar": "white",  # Pure white for dark theme (fallback)
-                "progress.bar.empty": "color(238)",  # Darker gray for dark theme
-                "progress.percentage": "bold color(253)",  # Bold very light gray
+                "progress.bar.fill": "#9C96B8",  # purple, lightened
+                "progress.bar": "#9C96B8",  # purple, lightened (fallback)
+                "progress.bar.empty": "#6F6E77",  # foreground, subtly lightened
+                "progress.percentage": "bold #D5D5D7",  # bold foreground, lightened
                 # Chart styles
-                "chart.bar": "color(111)",  # Light cyan
-                "chart.line": "color(117)",  # Light blue
-                "chart.point": "color(203)",  # Light red
-                "chart.axis": "color(248)",  # Light gray
-                "chart.label": "color(253)",  # Very light gray
+                "chart.bar": "#90AABF",  # blue, lightened
+                "chart.line": "#8DB5B8",  # cyan, lightened
+                "chart.point": "#CA9CA7",  # rose, lightened
+                "chart.axis": "#B3B4BC",  # muted, lightened
+                "chart.label": "#D5D5D7",  # foreground, lightened
                 # Status styles
-                "status.active": "color(118)",  # Light green
-                "status.inactive": "color(245)",  # Medium light gray
-                "status.warning": "color(214)",  # Orange
-                "status.error": "color(203)",  # Light red
+                "status.active": "#97B09F",  # green, lightened
+                "status.inactive": "#B3B4BC",  # muted, lightened
+                "status.warning": "#B8A988",  # yellow, lightened
+                "status.error": "#CA9CA7",  # rose, lightened
                 # Time styles
-                "time.elapsed": "color(253)",  # Very light gray
-                "time.remaining": "color(214)",  # Orange
-                "time.duration": "color(111)",  # Light cyan
+                "time.elapsed": "#D5D5D7",  # foreground, lightened
+                "time.remaining": "#B8A988",  # yellow, lightened
+                "time.duration": "#90AABF",  # blue, lightened
                 # Model styles
-                "model.opus": "color(117)",  # Light blue
-                "model.sonnet": "color(111)",  # Light cyan
-                "model.haiku": "color(118)",  # Light green
-                "model.unknown": "color(245)",  # Medium light gray
+                "model.opus": "#A7A2C1",  # lavender, lightened
+                "model.sonnet": "#90AABF",  # blue, lightened
+                "model.haiku": "#97B09F",  # green, lightened
+                "model.unknown": "#B3B4BC",  # muted, lightened
                 # Plan styles
-                "plan.pro": "color(214)",  # Orange (premium)
-                "plan.max5": "color(111)",  # Light cyan
-                "plan.max20": "color(117)",  # Light blue
-                "plan.custom": "color(118)",  # Light green
+                "plan.pro": "#C5A1B1",  # pink, lightened (premium)
+                "plan.max5": "#90AABF",  # blue, lightened
+                "plan.max20": "#A7A2C1",  # lavender, lightened
+                "plan.custom": "#97B09F",  # green, lightened
             }
         )
 

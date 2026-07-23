@@ -286,7 +286,8 @@ class SessionDisplayComponent:
             cost_limit_p90 = kwargs.get("cost_limit_p90", DEFAULT_COST_LIMIT)
             messages_limit_p90 = kwargs.get("messages_limit_p90", 1500)
 
-            screen_buffer.append("")
+            if not kwargs.get("no_header", False):
+                screen_buffer.append("")
             if plan == "custom":
                 screen_buffer.append("[bold]📊 Session-Based Dynamic Limits[/bold]")
                 screen_buffer.append(
@@ -294,7 +295,8 @@ class SessionDisplayComponent:
                 )
                 screen_buffer.append(self._separator_line())
             else:
-                screen_buffer.append("")
+                if not kwargs.get("no_header", False):
+                    screen_buffer.append("")
                 plan_info = Plans.get_plan_info(plan)
                 if plan_info["unverified"] and plan_info["guidance"]:
                     screen_buffer.append(f"[warning]{plan_info['guidance']}[/]")
@@ -414,7 +416,8 @@ class SessionDisplayComponent:
         screen_buffer.append(
             f"   [info]Limit resets at:[/]     [success]{reset_time_str}[/]"
         )
-        screen_buffer.append("")
+        if not kwargs.get("no_header", False):
+            screen_buffer.append("")
 
         self._add_notifications(
             screen_buffer,
@@ -425,9 +428,10 @@ class SessionDisplayComponent:
             token_limit,
         )
 
-        screen_buffer.append(
-            f"⏰ [dim]{current_time_str}[/] 📝 [success]Active session[/] | [dim]Ctrl+C to exit[/] 🟢"
-        )
+        if not kwargs.get("no_header", False):
+            screen_buffer.append(
+                f"⏰ [dim]{current_time_str}[/] 📝 [success]Active session[/] | [dim]Ctrl+C to exit[/] 🟢"
+            )
 
         if kwargs.get("no_emoji", False) or ascii_fallback_enabled():
             screen_buffer = [_EMOJI_RE.sub("", line) for line in screen_buffer]
@@ -541,26 +545,27 @@ class SessionDisplayComponent:
         screen_buffer.append("📨 [value]Sent Messages:[/]  [info]0[/] [dim]messages[/]")
         screen_buffer.append("")
 
-        if current_time and args:
-            try:
-                display_tz = pytz.timezone(args.timezone)
-                current_time_display = current_time.astimezone(display_tz)
-                current_time_str = format_display_time(
-                    current_time_display,
-                    get_time_format_preference(args),
-                    include_seconds=True,
-                )
-                screen_buffer.append(
-                    f"⏰ [dim]{current_time_str}[/] 📝 [info]No active session[/] | [dim]Ctrl+C to exit[/] 🟨"
-                )
-            except (pytz.exceptions.UnknownTimeZoneError, AttributeError):
+        if not (args and getattr(args, "no_header", False)):
+            if current_time and args:
+                try:
+                    display_tz = pytz.timezone(args.timezone)
+                    current_time_display = current_time.astimezone(display_tz)
+                    current_time_str = format_display_time(
+                        current_time_display,
+                        get_time_format_preference(args),
+                        include_seconds=True,
+                    )
+                    screen_buffer.append(
+                        f"⏰ [dim]{current_time_str}[/] 📝 [info]No active session[/] | [dim]Ctrl+C to exit[/] 🟨"
+                    )
+                except (pytz.exceptions.UnknownTimeZoneError, AttributeError):
+                    screen_buffer.append(
+                        "⏰ [dim]--:--:--[/] 📝 [info]No active session[/] | [dim]Ctrl+C to exit[/] 🟨"
+                    )
+            else:
                 screen_buffer.append(
                     "⏰ [dim]--:--:--[/] 📝 [info]No active session[/] | [dim]Ctrl+C to exit[/] 🟨"
                 )
-        else:
-            screen_buffer.append(
-                "⏰ [dim]--:--:--[/] 📝 [info]No active session[/] | [dim]Ctrl+C to exit[/] 🟨"
-            )
 
         if (args and getattr(args, "no_emoji", False)) or ascii_fallback_enabled():
             screen_buffer = [_EMOJI_RE.sub("", line) for line in screen_buffer]

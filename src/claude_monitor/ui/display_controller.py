@@ -605,7 +605,12 @@ class LiveDisplayManager:
             console=display_console,
             refresh_per_second=refresh_per_second,
             auto_refresh=auto_refresh,
-            vertical_overflow="visible",  # Prevent screen scrolling
+            # "visible" let Rich scroll the real terminal on overflow, which
+            # desyncs Live's cursor-position tracking and leaves duplicate
+            # stale frames in the scrollback on every refresh after that.
+            # "crop" clips overflow instead of scrolling, so Live's cursor
+            # math never desyncs.
+            vertical_overflow="crop",
         )
 
         return self._live_context
