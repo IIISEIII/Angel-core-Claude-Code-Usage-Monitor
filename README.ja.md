@@ -1,4 +1,4 @@
-# ISEI's Angel Claude Usage Monitor Customize
+# ISEI's Angel Core Claude Usage Monitor Customize
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![English](https://img.shields.io/badge/English-README-blue.svg)](README.md)
