@@ -7,7 +7,7 @@ A personal fork of [**Maciek-roboblog/Claude-Code-Usage-Monitor**](https://githu
 
 If you just want the upstream tool, go use the original repo — it's actively maintained and this fork will drift from it. This repo exists to document a specific personal setup (an "Angelcore"-themed, ultra-compact iTerm2 dashboard) in case it's useful or interesting to anyone else doing the same kind of customization.
 
-![Dashboard](doc/scnew.png)
+![Dashboard](doc/angelcore-dashboard.png)
 
 ---
 
